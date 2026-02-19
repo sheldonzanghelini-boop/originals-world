@@ -156,12 +156,11 @@ for (const [name, src] of spriteNames) {
 }
 
 // ============= TILE CACHE SYSTEM =============
-// Pre-render detailed tiles to offscreen canvases for performance
+// Pre-render detailed tiles ONCE at fixed base resolution, then scale via drawImage
 const tileCanvasCache = {};
-let tileCacheSize = 0;
+let tileCacheBuilt = false;
 const TILE_VARIANTS = 8; // variants per tile type
-let zoomDebounceTimer = null;
-let tileCacheGeneration = 0; // increments on each rebuild to cancel stale ones
+const TILE_BASE = 32; // fixed render resolution - never changes
 
 function seededRand(seed) {
   let s = seed % 2147483647;
@@ -193,11 +192,10 @@ function fillDither(c, x, y, w, h, c1, c2, rng) {
 }
 
 function initTileCache() {
-  // Synchronous build - only used on first load
-  const s = TILE_SIZE;
-  if (s === tileCacheSize) return;
-  tileCacheSize = s;
-  for (const k in tileCanvasCache) delete tileCanvasCache[k];
+  // Build once at fixed TILE_BASE resolution - never rebuilt on zoom
+  if (tileCacheBuilt) return;
+  tileCacheBuilt = true;
+  const s = TILE_BASE;
 
   for (let tileType = 0; tileType <= 41; tileType++) {
     for (let v = 0; v < TILE_VARIANTS; v++) {
@@ -220,52 +218,6 @@ function initTileCache() {
       tileCanvasCache[key] = off;
     }
   }
-}
-
-// Progressive (async) cache rebuild - used on zoom
-function rebuildTileCacheProgressive() {
-  const s = TILE_SIZE;
-  if (s === tileCacheSize) return;
-  tileCacheSize = s;
-  tileCacheGeneration++;
-  const gen = tileCacheGeneration;
-
-  const tasks = [];
-  for (let tileType = 0; tileType <= 41; tileType++) {
-    for (let v = 0; v < TILE_VARIANTS; v++) {
-      tasks.push({ key: tileType + '_' + v, type: 'tile', tileType, v });
-    }
-  }
-  for (let f = 0; f < 3; f++) {
-    for (let v = 0; v < TILE_VARIANTS; v++) {
-      tasks.push({ key: 'water_' + f + '_' + v, type: 'water', v, f });
-    }
-  }
-
-  let idx = 0;
-  const BATCH = 30;
-
-  function processBatch() {
-    if (tileCacheGeneration !== gen) return; // zoom changed again, abort this rebuild
-    const end = Math.min(idx + BATCH, tasks.length);
-    for (; idx < end; idx++) {
-      const t = tasks[idx];
-      const off = document.createElement('canvas');
-      off.width = s; off.height = s;
-      const oc = off.getContext('2d');
-      if (t.type === 'water') {
-        renderWaterTile(oc, t.v, t.f, s);
-      } else {
-        renderDetailedTile(oc, t.tileType, t.v, s);
-      }
-      tileCanvasCache[t.key] = off;
-    }
-    if (idx < tasks.length) {
-      setTimeout(processBatch, 0);
-    }
-  }
-
-  processBatch();
 }
 
 function renderWaterTile(c, variant, frame, s) {
@@ -1697,13 +1649,7 @@ canvas.addEventListener('wheel', (e) => {
   } else {
     TILE_SIZE = Math.max(TILE_SIZE_MIN, TILE_SIZE - 4);
   }
-  // Debounce: rebuild cache only after user stops zooming (200ms)
-  // Old cache tiles are scaled via drawImage in the meantime (zero lag)
-  if (zoomDebounceTimer) clearTimeout(zoomDebounceTimer);
-  zoomDebounceTimer = setTimeout(() => {
-    rebuildTileCacheProgressive();
-    zoomDebounceTimer = null;
-  }, 200);
+  // Cache is fixed at TILE_BASE, drawImage scales automatically
 }, { passive: false });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -2032,7 +1978,7 @@ function render() {
 
 // ============= TILE DRAWING (TIBIA STYLE) =============
 function drawTile(tx, ty, sx, sy) {
-  if (tileCacheSize === 0) initTileCache(); // only first load
+  if (!tileCacheBuilt) initTileCache();
   const tile = gameMap[ty][tx];
   const v = (tx * 7 + ty * 13) % TILE_VARIANTS;
 

@@ -57,9 +57,9 @@ const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE:5, WOOD_F
   FLOWERS:10, BUSH:11, ROCK:12, RED_CARPET:13, ALTAR:14, ANVIL:15, FURNACE:16, BOOKSHELF:17, TABLE:18, CHAIR:19,
   WELL:20, FENCE:21, ROOF_STONE:22, ROOF_WOOD:23, WINDOW_STONE:24, WINDOW_WOOD:25, CROSS:26, TALL_GRASS:27, MUSHROOM:28,
   BARREL:29, CRATE:30, TORCH_WALL:31, BED:32, RUG:33, CHURCH_PEW:34, DARK_GRASS:35,
-  GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40 };
+  GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41 };
 const BLOCKED = new Set([T.STONE_WALL, T.WATER, T.TREE, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
-  T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY]);
+  T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL]);
 
 // ============= STATE =============
 let gameMap = null;
@@ -154,6 +154,34 @@ for (const [name, src] of spriteNames) {
   img.src = src;
   sprites[name] = img;
 }
+
+// ============= BLOCK TEXTURES =============
+const blockTextures = {};
+const blockTextureNames = [
+  ['tronco', '/assets/blocks/tronco.png'],
+  ['tabuas', '/assets/blocks/tabuas.png'],
+  ['tijolos', '/assets/blocks/tijolos.png'],
+  ['tijolosigreja', '/assets/blocks/tijolosigreja.png'],
+  ['pedras', '/assets/blocks/pedras.png'],
+  ['pedra', '/assets/blocks/pedra.png'],
+];
+for (const [name, src] of blockTextureNames) {
+  const img = new Image();
+  img.onload = () => { console.log('Block texture loaded:', name); };
+  img.onerror = () => { console.warn('Block texture not found:', src); };
+  img.src = src;
+  blockTextures[name] = img;
+}
+
+// Mapeamento de tile type -> textura de bloco
+const TILE_BLOCK_MAP = {
+  [T.WOOD_WALL]: 'tronco',
+  [T.WOOD_FLOOR]: 'tabuas',
+  [T.STONE_WALL]: 'tijolos',
+  [T.CHURCH_WALL]: 'tijolosigreja',
+  [T.STONE_PATH]: 'pedras',
+  [T.ROCK]: 'pedra',
+};
 
 // ============= LOGIN/REGISTER =============
 const loginScreen = document.getElementById('login-screen');
@@ -694,6 +722,18 @@ function drawTile(tx, ty, sx, sy) {
   const tile = gameMap[ty][tx];
   const s = TILE_SIZE;
   const seed = (tx * 7 + ty * 13) % 7;
+
+  // Usar textura de bloco se disponível
+  const blockName = TILE_BLOCK_MAP[tile];
+  if (blockName && blockTextures[blockName] && blockTextures[blockName].complete && blockTextures[blockName].naturalWidth > 0) {
+    // Para ROCK, desenhar grama por baixo primeiro
+    if (tile === T.ROCK) {
+      ctx.fillStyle = '#4a8c3f';
+      ctx.fillRect(sx, sy, s, s);
+    }
+    ctx.drawImage(blockTextures[blockName], sx, sy, s, s);
+    return;
+  }
 
   switch (tile) {
     case T.GRASS:
@@ -1389,6 +1429,25 @@ function drawTile(tx, ty, sx, sy) {
       ctx.moveTo(sx+s*0.85, sy+s*0.85); ctx.lineTo(sx+s*0.92, sy+s*0.93);
       ctx.stroke();
       break;
+
+    case T.CHURCH_WALL:
+      // Fallback caso a textura não carregue
+      ctx.fillStyle = '#8a7a6a';
+      ctx.fillRect(sx, sy, s, s);
+      ctx.strokeStyle = '#6a5a4a';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy+s*0.5); ctx.lineTo(sx+s, sy+s*0.5);
+      if ((tx+ty)%2===0) {
+        ctx.moveTo(sx+s*0.5, sy); ctx.lineTo(sx+s*0.5, sy+s*0.5);
+      } else {
+        ctx.moveTo(sx+s*0.33, sy+s*0.5); ctx.lineTo(sx+s*0.33, sy+s);
+        ctx.moveTo(sx+s*0.66, sy); ctx.lineTo(sx+s*0.66, sy+s*0.5);
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#9a8a7a';
+      ctx.fillRect(sx, sy, s, s*0.08);
+      break;
   }
 }
 
@@ -1973,6 +2032,12 @@ function drawMinimap() {
         case T.WELL: ctx.fillStyle = '#777'; break;
         case T.FENCE: ctx.fillStyle = '#8a6a40'; break;
         case T.SAND: ctx.fillStyle = '#b4a070'; break;
+        case T.GRAVESTONE: ctx.fillStyle = '#888'; break;
+        case T.DEAD_TREE: ctx.fillStyle = '#4a3520'; break;
+        case T.BONE: ctx.fillStyle = '#c8c0a0'; break;
+        case T.MUD: ctx.fillStyle = '#6b5030'; break;
+        case T.HAY: ctx.fillStyle = '#c8a040'; break;
+        case T.CHURCH_WALL: ctx.fillStyle = '#6a5a4a'; break;
         default: ctx.fillStyle = '#000';
       }
       ctx.fillRect(mmX + tx * tileW, mmY + ty * tileH, Math.ceil(tileW), Math.ceil(tileH));

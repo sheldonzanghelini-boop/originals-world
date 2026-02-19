@@ -155,7 +155,77 @@ for (const [name, src] of spriteNames) {
   sprites[name] = img;
 }
 
-// ============= TILE CACHE SYSTEM =============
+// ============= TILESET IMAGE LOADING =============
+const tilesetImages = {};
+let tilesetsLoaded = 0;
+const tilesetSources = [
+  ['grassDirt', '/assets/tilesets/grass-dirt.png'],
+];
+for (const [name, src] of tilesetSources) {
+  const img = new Image();
+  img.onload = () => { tilesetsLoaded++; };
+  img.onerror = () => { console.warn('Tileset not found:', src); tilesetsLoaded++; };
+  img.src = src;
+  tilesetImages[name] = img;
+}
+
+// Tileset grass-dirt layout (4 cols x 4 rows, each tile 32x32):
+//  0: Grass A      1: Grass B      2: Grass C      3: Dirt full
+//  4: Edge Top     5: Edge Bottom  6: Edge Left    7: Edge Right
+//  8: Ext TL       9: Ext TR      10: Ext BL      11: Ext BR
+// 12: Int TL      13: Int TR      14: Int BL      15: Int BR
+const TSET_COLS = 4;
+const TSET_TILE = 32;
+
+function tilesetSrc(index) {
+  const col = index % TSET_COLS;
+  const row = Math.floor(index / TSET_COLS);
+  return { sx: col * TSET_TILE, sy: row * TSET_TILE };
+}
+
+// Helper: is tile at (tx,ty) a "ground" type (grass-like)?
+const GROUND_TILES = new Set([T.GRASS, T.DARK_GRASS, T.TALL_GRASS, T.FLOWERS, T.MUSHROOM]);
+function isGround(tx, ty) {
+  if (!gameMap || ty < 0 || ty >= mapHeight || tx < 0 || tx >= mapWidth) return true;
+  return GROUND_TILES.has(gameMap[ty][tx]);
+}
+function isDirt(tx, ty) {
+  if (!gameMap || ty < 0 || ty >= mapHeight || tx < 0 || tx >= mapWidth) return false;
+  return gameMap[ty][tx] === T.DIRT;
+}
+
+// Determine which tileset sub-tile index to use for a grass tile based on neighbors
+function getGrassTransitionIndex(tx, ty) {
+  const dT = isDirt(tx, ty - 1);
+  const dB = isDirt(tx, ty + 1);
+  const dL = isDirt(tx - 1, ty);
+  const dR = isDirt(tx + 1, ty);
+  const dTL = isDirt(tx - 1, ty - 1);
+  const dTR = isDirt(tx + 1, ty - 1);
+  const dBL = isDirt(tx - 1, ty + 1);
+  const dBR = isDirt(tx + 1, ty + 1);
+
+  // Edge cases (dirt on one side)
+  if (dT && !dB && !dL && !dR) return 4;  // dirt above
+  if (dB && !dT && !dL && !dR) return 5;  // dirt below
+  if (dL && !dR && !dT && !dB) return 6;  // dirt left
+  if (dR && !dL && !dT && !dB) return 7;  // dirt right
+
+  // External corners (dirt in one corner only)
+  if (dT && dL) return 8;   // Ext TL
+  if (dT && dR) return 9;   // Ext TR
+  if (dB && dL) return 10;  // Ext BL
+  if (dB && dR) return 11;  // Ext BR
+
+  // Internal corners (diagonal dirt only, no adjacent edge dirt)
+  if (!dT && !dL && dTL) return 12; // Int TL
+  if (!dT && !dR && dTR) return 13; // Int TR
+  if (!dB && !dL && dBL) return 14; // Int BL
+  if (!dB && !dR && dBR) return 15; // Int BR
+
+  // Pure grass variations
+  return (tx * 7 + ty * 13) % 3; // 0, 1, or 2
+}
 // Pre-render detailed tiles ONCE at fixed base resolution, then scale via drawImage
 const tileCanvasCache = {};
 let tileCacheBuilt = false;
@@ -1981,7 +2051,35 @@ function drawTile(tx, ty, sx, sy) {
   if (!tileCacheBuilt) initTileCache();
   const tile = gameMap[ty][tx];
   const v = (tx * 7 + ty * 13) % TILE_VARIANTS;
+  const ts = tilesetImages.grassDirt;
 
+  // === GRASS with tileset transitions ===
+  if (GROUND_TILES.has(tile) && ts && ts.complete && ts.naturalWidth > 0) {
+    const idx = getGrassTransitionIndex(tx, ty);
+    const src = tilesetSrc(idx);
+    ctx.drawImage(ts, src.sx, src.sy, TSET_TILE, TSET_TILE, sx, sy, TILE_SIZE, TILE_SIZE);
+
+    // For non-plain grass tiles, overlay the object (flowers, mushroom, etc) from cache on top
+    if (tile !== T.GRASS) {
+      const key = tile + '_' + v;
+      const cached = tileCanvasCache[key];
+      if (cached) {
+        ctx.globalAlpha = 0.7;
+        ctx.drawImage(cached, 0, 0, cached.width, cached.height, sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.globalAlpha = 1;
+      }
+    }
+    return;
+  }
+
+  // === DIRT with tileset ===
+  if (tile === T.DIRT && ts && ts.complete && ts.naturalWidth > 0) {
+    const src = tilesetSrc(3); // pure dirt
+    ctx.drawImage(ts, src.sx, src.sy, TSET_TILE, TSET_TILE, sx, sy, TILE_SIZE, TILE_SIZE);
+    return;
+  }
+
+  // === WATER (animated) ===
   if (tile === T.WATER) {
     const key = 'water_' + waterAnimFrame + '_' + v;
     const cached = tileCanvasCache[key];
@@ -1991,6 +2089,7 @@ function drawTile(tx, ty, sx, sy) {
     }
   }
 
+  // === All other tiles from procedural cache ===
   const key = tile + '_' + v;
   const cached = tileCanvasCache[key];
   if (cached) {

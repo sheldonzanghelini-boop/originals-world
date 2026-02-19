@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Originals World</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen">
+    <div id="login-box">
+      <h1>⚔️ Originals World ⚔️</h1>
+      <p class="subtitle">Um mundo de aventura te espera</p>
+      <div id="login-error" class="error-msg"></div>
+      <div class="form-group">
+        <label>Nome de Usuário</label>
+        <input type="text" id="username" maxlength="20" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Senha</label>
+        <input type="password" id="password" maxlength="30">
+      </div>
+      <div class="btn-row">
+        <button id="btn-login" class="btn-primary">Entrar</button>
+        <button id="btn-register" class="btn-secondary">Criar Conta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="game-screen" style="display:none;">
+    <div id="game-layout">
+      <!-- LEFT: Quest Tracker (overlay on canvas) -->
+      <div id="game-area">
+        <canvas id="gameCanvas"></canvas>
+        <div id="quest-tracker"></div>
+        <div id="damage-numbers"></div>
+      </div>
+
+      <!-- RIGHT: Side Panel -->
+      <div id="side-panel">
+        <div id="panel-tabs">
+          <button class="tab-btn active" data-tab="status">Status</button>
+          <button class="tab-btn" data-tab="inventory">Inventário</button>
+          <button class="tab-btn" data-tab="skills">Skills</button>
+        </div>
+
+        <!-- STATUS TAB -->
+        <div id="tab-status" class="tab-content active">
+          <div class="panel-section">
+            <h3 id="char-name">Jogador</h3>
+            <div class="stat-row"><span>Nível:</span><span id="stat-level">1</span></div>
+            <div class="hp-bar-container">
+              <div id="hp-bar" class="hp-bar"></div>
+              <span id="hp-text">25/25</span>
+            </div>
+            <div class="xp-bar-container">
+              <div id="xp-bar" class="xp-bar"></div>
+              <span id="xp-text">0/100 XP</span>
+            </div>
+            <div class="stat-row"><span>💰 Pratas:</span><span id="stat-silver">0</span></div>
+          </div>
+          <div class="panel-section">
+            <h4>Atributos</h4>
+            <div class="stat-row"><span>❤️ Vida:</span><span id="stat-hp-max">25</span></div>
+            <div class="stat-row"><span>⚔️ Força:</span><span id="stat-str">0</span></div>
+            <div class="stat-row"><span>🧠 Inteligência:</span><span id="stat-int">0</span></div>
+            <div class="stat-row"><span>🛡️ Defesa:</span><span id="stat-def">0</span></div>
+            <div class="stat-row"><span>🍀 Sorte:</span><span id="stat-luck">0</span></div>
+          </div>
+          <div class="panel-section">
+            <h4>Equipamento</h4>
+            <div class="equip-grid">
+              <div class="equip-box" id="equip-helmet" data-slot="helmet">
+                <span class="equip-box-label">Elmo</span>
+              </div>
+              <div class="equip-box" id="equip-chest" data-slot="chest">
+                <span class="equip-box-label">Peitoral</span>
+              </div>
+              <div class="equip-box" id="equip-legs" data-slot="legs">
+                <span class="equip-box-label">Calça</span>
+              </div>
+              <div class="equip-box" id="equip-boots" data-slot="boots">
+                <span class="equip-box-label">Botas</span>
+              </div>
+              <div class="equip-box" id="equip-weapon" data-slot="weapon">
+                <span class="equip-box-label">Mão 1</span>
+              </div>
+              <div class="equip-box" id="equip-weapon2" data-slot="weapon2">
+                <span class="equip-box-label">Mão 2</span>
+              </div>
+              <div class="equip-box" id="equip-ring1" data-slot="ring1">
+                <span class="equip-box-label">Anel 1</span>
+              </div>
+              <div class="equip-box" id="equip-ring2" data-slot="ring2">
+                <span class="equip-box-label">Anel 2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- INVENTORY TAB -->
+        <div id="tab-inventory" class="tab-content">
+          <div class="panel-section">
+            <h4>Inventário</h4>
+            <div id="inventory-grid"></div>
+          </div>
+        </div>
+
+        <!-- SKILLS TAB -->
+        <div id="tab-skills" class="tab-content">
+          <div class="panel-section">
+            <h4>Árvore de Skills</h4>
+            <div class="stat-row"><span>Pontos disponíveis:</span><span id="skill-points">0</span></div>
+            <div id="skills-list">
+              <div class="skill-row">
+                <span>❤️ Vida</span>
+                <span class="skill-val" id="skill-vitality">0</span>
+                <button class="btn-skill" data-skill="vitality">+</button>
+              </div>
+              <div class="skill-row">
+                <span>⚔️ Força</span>
+                <span class="skill-val" id="skill-strength">0</span>
+                <button class="btn-skill" data-skill="strength">+</button>
+              </div>
+              <div class="skill-row">
+                <span>🧠 Inteligência</span>
+                <span class="skill-val" id="skill-intelligence">0</span>
+                <button class="btn-skill" data-skill="intelligence">+</button>
+              </div>
+              <div class="skill-row">
+                <span>🛡️ Defesa</span>
+                <span class="skill-val" id="skill-defense">0</span>
+                <button class="btn-skill" data-skill="defense">+</button>
+              </div>
+              <div class="skill-row">
+                <span>🍀 Sorte</span>
+                <span class="skill-val" id="skill-luck">0</span>
+                <button class="btn-skill" data-skill="luck">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTTOM: Chat -->
+    <div id="chat-panel">
+      <div id="chat-messages"></div>
+      <div id="chat-input-row">
+        <input type="text" id="chat-input" placeholder="Pressione Enter para enviar..." maxlength="200" autocomplete="off">
+        <button id="btn-send-chat">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NPC DIALOG -->
+  <div id="npc-dialog" style="display:none;">
+    <div id="npc-dialog-box">
+      <h3 id="npc-dialog-name">NPC</h3>
+      <p id="npc-dialog-text">Texto</p>
+      <div id="npc-dialog-buttons"></div>
+    </div>
+  </div>
+
+  <!-- DEATH SCREEN -->
+  <div id="death-screen" style="display:none;">
+    <div class="death-box">
+      <h2>☠️ Você morreu!</h2>
+      <p>Você perdeu 10% das suas pratas.</p>
+      <button id="btn-respawn" class="btn-primary">Renascer</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/game.js"></script>
+</body>
+</html>

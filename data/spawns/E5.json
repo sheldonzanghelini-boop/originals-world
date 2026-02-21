@@ -1,0 +1,18 @@
+[
+  {
+    "id": "mlwxvhihzra1",
+    "type": "skeleton",
+    "x": 78,
+    "y": 9,
+    "count": 8,
+    "radius": 5
+  },
+  {
+    "id": "mlwyc03b0pkw",
+    "type": "zombie",
+    "x": 49,
+    "y": 59,
+    "count": 4,
+    "radius": 5
+  }
+]

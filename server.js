@@ -4,6 +4,129 @@ const { Server } = require('socket.io');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
+
+// ============================
+// DATA PERSISTENCE
+// ============================
+const DATA_DIR = path.join(__dirname, 'data');
+const MAPS_DIR = path.join(DATA_DIR, 'maps');
+const OBJECTS_DIR = path.join(DATA_DIR, 'objects');
+const SOLID_DIR = path.join(DATA_DIR, 'solidcells');
+const BEHIND_DIR = path.join(DATA_DIR, 'behindcells');
+const SPAWNS_DIR = path.join(DATA_DIR, 'spawns');
+const NPC_FILE = path.join(DATA_DIR, 'npcs.json');
+
+// Ensure data directories exist
+for (const dir of [DATA_DIR, MAPS_DIR, OBJECTS_DIR, SOLID_DIR, BEHIND_DIR, SPAWNS_DIR]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function saveMapToDisk(quadrant, mapData) {
+  try {
+    fs.writeFileSync(path.join(MAPS_DIR, `${quadrant}.json`), JSON.stringify(mapData));
+    console.log(`[Persist] Mapa ${quadrant} salvo em disco`);
+  } catch (e) { console.error(`[Persist] Erro ao salvar mapa ${quadrant}:`, e.message); }
+}
+
+function loadMapFromDisk(quadrant) {
+  const file = path.join(MAPS_DIR, `${quadrant}.json`);
+  if (fs.existsSync(file)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      console.log(`[Persist] Mapa ${quadrant} carregado do disco`);
+      return data;
+    } catch (e) { console.error(`[Persist] Erro ao carregar mapa ${quadrant}:`, e.message); }
+  }
+  return null;
+}
+
+function saveObjectsToDisk(quadrant, objects) {
+  try {
+    fs.writeFileSync(path.join(OBJECTS_DIR, `${quadrant}.json`), JSON.stringify(objects));
+    console.log(`[Persist] Objetos ${quadrant} salvos em disco`);
+  } catch (e) { console.error(`[Persist] Erro ao salvar objetos ${quadrant}:`, e.message); }
+}
+
+function loadObjectsFromDisk(quadrant) {
+  const file = path.join(OBJECTS_DIR, `${quadrant}.json`);
+  if (fs.existsSync(file)) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (e) { console.error(`[Persist] Erro ao carregar objetos ${quadrant}:`, e.message); }
+  }
+  return null;
+}
+
+function saveSolidCellsToDisk(quadrant, cells) {
+  try {
+    fs.writeFileSync(path.join(SOLID_DIR, `${quadrant}.json`), JSON.stringify([...cells]));
+    console.log(`[Persist] SolidCells ${quadrant} salvos em disco (${cells.size})`);
+  } catch (e) { console.error(`[Persist] Erro ao salvar solidcells ${quadrant}:`, e.message); }
+}
+
+function loadSolidCellsFromDisk(quadrant) {
+  const file = path.join(SOLID_DIR, `${quadrant}.json`);
+  if (fs.existsSync(file)) {
+    try {
+      const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return new Set(arr);
+    } catch (e) { console.error(`[Persist] Erro ao carregar solidcells ${quadrant}:`, e.message); }
+  }
+  return null;
+}
+
+function saveNpcPositionsToDisk(npcDefs) {
+  try {
+    const positions = npcDefs.map(n => ({ id: n.id, x: n.x, y: n.y }));
+    fs.writeFileSync(NPC_FILE, JSON.stringify(positions, null, 2));
+    console.log(`[Persist] Posições de NPCs salvas em disco`);
+  } catch (e) { console.error(`[Persist] Erro ao salvar NPCs:`, e.message); }
+}
+
+function loadNpcPositionsFromDisk() {
+  if (fs.existsSync(NPC_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(NPC_FILE, 'utf8'));
+    } catch (e) { console.error(`[Persist] Erro ao carregar NPCs:`, e.message); }
+  }
+  return null;
+}
+
+function saveBehindCellsToDisk(quadrant, cells) {
+  try {
+    fs.writeFileSync(path.join(BEHIND_DIR, `${quadrant}.json`), JSON.stringify([...cells]));
+    console.log(`[Persist] BehindCells ${quadrant} salvos em disco (${cells.size})`);
+  } catch (e) { console.error(`[Persist] Erro ao salvar behindcells ${quadrant}:`, e.message); }
+}
+
+function loadBehindCellsFromDisk(quadrant) {
+  const file = path.join(BEHIND_DIR, `${quadrant}.json`);
+  if (fs.existsSync(file)) {
+    try {
+      const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return new Set(arr);
+    } catch (e) { console.error(`[Persist] Erro ao carregar behindcells ${quadrant}:`, e.message); }
+  }
+  return null;
+}
+
+function saveSpawnsToDisk(quadrant, spawns) {
+  try {
+    fs.writeFileSync(path.join(SPAWNS_DIR, `${quadrant}.json`), JSON.stringify(spawns, null, 2));
+    console.log(`[Persist] Spawns ${quadrant} salvos em disco (${spawns.length})`);
+  } catch (e) { console.error(`[Persist] Erro ao salvar spawns ${quadrant}:`, e.message); }
+}
+
+function loadSpawnsFromDisk(quadrant) {
+  const file = path.join(SPAWNS_DIR, `${quadrant}.json`);
+  if (fs.existsSync(file)) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (e) { console.error(`[Persist] Erro ao carregar spawns ${quadrant}:`, e.message); }
+  }
+  return null;
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -37,7 +160,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER UNIQUE NOT NULL,
     x REAL DEFAULT 50,
-    y REAL DEFAULT 50,
+    y REAL DEFAULT 47,
     hp INTEGER DEFAULT 25,
     max_hp INTEGER DEFAULT 25,
     level INTEGER DEFAULT 1,
@@ -95,7 +218,7 @@ try { db.exec("ALTER TABLE characters ADD COLUMN equipped_weapon2 TEXT DEFAULT '
 // Ensure is_admin column exists (for DBs created before admin feature)
 try { db.exec("ALTER TABLE accounts ADD COLUMN is_admin INTEGER DEFAULT 0"); } catch(e) {}
 // Add quadrant column for zone system
-try { db.exec("ALTER TABLE characters ADD COLUMN quadrant TEXT DEFAULT 'E5'"); } catch(e) {}
+try { db.exec("ALTER TABLE characters ADD COLUMN quadrant TEXT DEFAULT 'F5'"); } catch(e) {}
 
 // Admin account
 const adminRow = db.prepare('SELECT id FROM accounts WHERE username = ?').get('admin');
@@ -136,26 +259,71 @@ const ITEMS = {
     id: 'pocao_cura', name: 'Poção de Cura', type: 'consumable',
     healAmount: 10, description: 'Restaura 10 de vida.'
   },
-  couro_simples: {
-    id: 'couro_simples', name: 'Couro Simples', type: 'material',
-    icon: '/assets/sprites/cow/courosimples.png',
+  couro_cru: {
+    id: 'couro_cru', name: 'Couro Cru', type: 'material',
+    icon: '/assets/sprites/cow/courocru.png',
     stackMax: 10,
-    description: 'Um pedaço de couro rústico retirado de uma vaca.'
+    description: 'Um pedaço de couro cru retirado de um animal. Pode ser trabalhado no artesão.'
+  },
+  couro_trabalhado: {
+    id: 'couro_trabalhado', name: 'Couro Trabalhado', type: 'material',
+    icon: '/assets/sprites/cow/courotrabalhado.png',
+    stackMax: 10,
+    description: 'Couro processado e pronto para ser usado em criações do artesão.'
   },
   tunica_couro_simples: {
     id: 'tunica_couro_simples', name: 'Túnica de Couro Simples', type: 'chest',
-    defense: 2, icon: '/assets/icons/peitorais/tunicacourosimples.png',
+    defense: 2, icon: '/assets/icons/Armadura de Couro Simples/tunicacourosimples.png',
     description: 'Uma túnica feita de couro simples. Defesa: +2'
+  },
+  chapeu_couro_simples: {
+    id: 'chapeu_couro_simples', name: 'Chapéu de Couro Simples', type: 'helmet',
+    defense: 1, icon: '/assets/icons/Armadura de Couro Simples/chapeucourosimples.png',
+    description: 'Um chapéu feito de couro simples. Defesa: +1'
+  },
+  bota_couro_simples: {
+    id: 'bota_couro_simples', name: 'Bota de Couro Simples', type: 'boots',
+    defense: 1, icon: '/assets/icons/Armadura de Couro Simples/botacourosimples.png',
+    description: 'Botas feitas de couro simples. Defesa: +1'
+  },
+  calca_couro_simples: {
+    id: 'calca_couro_simples', name: 'Calça de Couro Simples', type: 'legs',
+    defense: 1, icon: '/assets/icons/Armadura de Couro Simples/calcacourosimples.png',
+    description: 'Uma calça feita de couro simples. Defesa: +1'
   }
 };
 
 // Receitas de crafting do Artesão
 const CRAFT_RECIPES = {
+  couro_trabalhado: {
+    resultId: 'couro_trabalhado', resultQty: 1,
+    name: 'Couro Trabalhado',
+    ingredients: [{ itemId: 'couro_cru', qty: 2 }],
+    description: 'Requer 2x Couro Cru'
+  },
   tunica_couro_simples: {
     resultId: 'tunica_couro_simples', resultQty: 1,
     name: 'Túnica de Couro Simples',
-    ingredients: [{ itemId: 'couro_simples', qty: 5 }],
-    description: 'Requer 5x Couro Simples'
+    ingredients: [{ itemId: 'couro_cru', qty: 5 }],
+    description: 'Requer 5x Couro Cru'
+  },
+  chapeu_couro_simples: {
+    resultId: 'chapeu_couro_simples', resultQty: 1,
+    name: 'Chapéu de Couro Simples',
+    ingredients: [{ itemId: 'couro_cru', qty: 5 }],
+    description: 'Requer 5x Couro Cru'
+  },
+  bota_couro_simples: {
+    resultId: 'bota_couro_simples', resultQty: 1,
+    name: 'Bota de Couro Simples',
+    ingredients: [{ itemId: 'couro_cru', qty: 5 }],
+    description: 'Requer 5x Couro Cru'
+  },
+  calca_couro_simples: {
+    resultId: 'calca_couro_simples', resultQty: 1,
+    name: 'Calça de Couro Simples',
+    ingredients: [{ itemId: 'couro_cru', qty: 5 }],
+    description: 'Requer 5x Couro Cru'
   }
 };
 
@@ -230,7 +398,7 @@ function isQuestComplete(qDef, qRow) {
 }
 
 function getEnemyTypeName(type) {
-  const names = { skeleton: 'Esqueletos', slime: 'Slimes', cow: 'Vacas' };
+  const names = { skeleton: 'Esqueletos', slime: 'Slimes', cow: 'Vacas', zombie: 'Zumbis' };
   return names[type] || type;
 }
 
@@ -247,15 +415,15 @@ function getQuestProgressStr(qDef, qRow) {
 }
 
 const NPC_DEFS = [
-  { id: 'padre', name: 'Padre', x: 50, y: 25, sprite: 'padre', questId: 'padre_quest',
-    dialog: 'Que a paz esteja com você, meu filho.', quadrant: 'E5' },
-  { id: 'paladino', name: 'Paladino', x: 50, y: 35, sprite: 'paladino', questId: 'paladino_quest',
+  { id: 'padre', name: 'Padre', x: 3, y: 2, sprite: 'padre', questId: 'padre_quest',
+    dialog: 'Que a paz esteja com você, meu filho.', quadrant: 'IGREJA' },
+  { id: 'paladino', name: 'Paladino', x: 55, y: 50, sprite: 'paladino', questId: 'paladino_quest',
     dialog: 'Saudações, aventureiro!', quadrant: 'E5' },
-  { id: 'ferreiro', name: 'Ferreiro', x: 62, y: 69, sprite: 'ferreiro', questId: null,
-    dialog: 'Bem-vindo à minha ferraria! Infelizmente ainda não tenho equipamentos para venda. Volte em breve!',
+  { id: 'ferreiro', name: 'Ferreiro', x: 45, y: 55, sprite: 'ferreiro', questId: null,
+    dialog: 'Bem-vindo Ã  minha ferraria! Infelizmente ainda não tenho equipamentos para venda. Volte em breve!',
     isShop: true, shopItems: [], quadrant: 'E5' },
-  { id: 'artesao', name: 'Artesão', x: 32, y: 69, sprite: 'artesao', questId: null,
-    dialog: 'Bem-vindo à minha oficina! Traga-me materiais e eu posso criar equipamentos para você.',
+  { id: 'artesao', name: 'Artesão', x: 55, y: 55, sprite: 'artesao', questId: null,
+    dialog: 'Bem-vindo Ã  minha oficina! Traga-me materiais e eu posso criar equipamentos para você.',
     isCrafter: true, quadrant: 'E5' }
 ];
 
@@ -263,24 +431,35 @@ const NPC_DEFS = [
 // QUADRANT DEFINITIONS
 // ============================
 const QUADRANTS = {
-  E5: { id: 'E5', name: 'Cidade de Origens', neighbors: { left: 'E4', right: null, up: null, down: 'F5' }, spawnX: 50, spawnY: 50 },
+  E5: { id: 'E5', name: 'Vila de Testes', neighbors: { left: 'E4', right: null, up: null, down: 'F5' }, spawnX: 50, spawnY: 95 },
   E4: { id: 'E4', name: 'Planície Verde', neighbors: { left: null, right: 'E5', up: null, down: null }, spawnX: 90, spawnY: 50 },
-  F5: { id: 'F5', name: 'Vila de Testes', neighbors: { left: null, right: null, up: 'E5', down: null }, spawnX: 50, spawnY: 5 }
+  F5: { id: 'F5', name: 'Cidade de Origens', neighbors: { left: null, right: null, up: 'E5', down: null }, spawnX: 50, spawnY: 5 },
+  IGREJA: { id: 'IGREJA', name: 'Igreja', neighbors: { left: null, right: null, up: null, down: null }, spawnX: 3, spawnY: 6, mapW: 7, mapH: 8 }
 };
+
+// Portal definitions: when player steps on {x,y} in fromQ, teleport to toQ at {toX,toY}
+const PORTALS = [
+  { fromQ: 'E5', x: 50, y: 43, toQ: 'IGREJA', toX: 3, toY: 6 },
+  { fromQ: 'E5', x: 50, y: 44, toQ: 'IGREJA', toX: 3, toY: 6 },
+  { fromQ: 'IGREJA', x: 3, y: 7, toQ: 'E5', toX: 50, toY: 47 },
+];
 
 // ============================
 // MAP GENERATION
 // ============================
 const MAP_W = 100;
 const MAP_H = 100;
-const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE:5, WOOD_FLOOR:6, CHURCH_FLOOR:7, WOOD_WALL:8, SAND:9,
+const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE_CARVALHO:5, WOOD_FLOOR:6, CHURCH_FLOOR:7, WOOD_WALL:8, SAND:9,
   FLOWERS:10, BUSH:11, ROCK:12, RED_CARPET:13, ALTAR:14, ANVIL:15, FURNACE:16, BOOKSHELF:17, TABLE:18, CHAIR:19,
   WELL:20, FENCE:21, ROOF_STONE:22, ROOF_WOOD:23, WINDOW_STONE:24, WINDOW_WOOD:25, CROSS:26, TALL_GRASS:27, MUSHROOM:28,
   BARREL:29, CRATE:30, TORCH_WALL:31, BED:32, RUG:33, CHURCH_PEW:34, DARK_GRASS:35,
   GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41,
-  ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45 };
-const BLOCKED_TILES = new Set([T.STONE_WALL, T.WATER, T.TREE, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
-  T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL, T.BENCH]);
+  ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45,
+  TREE_BETULA:46, TREE_CARVALHO_SMALL:47, TREE_MAGICA:48, TREE_MANGUE:49, TREE_PINHEIRO:50, TREE_PINOS:51,
+  WATER_RIVER:52 };
+const BLOCKED_TILES = new Set([T.STONE_WALL, T.WATER, T.WATER_RIVER, T.TREE_CARVALHO, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
+  T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL, T.BENCH,
+  T.TREE_BETULA, T.TREE_CARVALHO_SMALL, T.TREE_MAGICA, T.TREE_MANGUE, T.TREE_PINHEIRO, T.TREE_PINOS]);
 const BLOCKED_TILES_DEFAULT = new Set(BLOCKED_TILES);
 
 function mulberry32(a) {
@@ -296,15 +475,16 @@ function generateMapE5() {
   const map = Array.from({length: MAP_H}, () => Array(MAP_W).fill(T.GRASS));
   const rng = mulberry32(42);
 
-  // Tree border
+  // Tree border (mix of carvalho and pinos)
   for (let y = 0; y < MAP_H; y++)
     for (let x = 0; x < MAP_W; x++)
-      if (x < 3 || x >= MAP_W-3 || y < 3 || y >= MAP_H-3) map[y][x] = T.TREE;
+      if (x < 3 || x >= MAP_W-3 || y < 3 || y >= MAP_H-3)
+        map[y][x] = rng() < 0.7 ? T.TREE_CARVALHO : T.TREE_PINOS;
 
   // === CENTER OF MAP ===
   const cx = 50, cy = 50;
 
-  // Helper: organic plaza shape — a rounded irregular polygon with noise
+  // Helper: organic plaza shape â€” a rounded irregular polygon with noise
   // Wider than tall, with natural bumps
   function isPlaza(x, y) {
     const dx = x - cx, dy = y - cy;
@@ -348,7 +528,7 @@ function generateMapE5() {
   // Open passage on right side
   for (let y = cy - 5; y <= cy + 5; y++)
     for (let x = MAP_W - 3; x < MAP_W; x++)
-      if (map[y][x] === T.TREE) map[y][x] = T.STONE_PATH;
+      if (map[y][x] === T.TREE_CARVALHO) map[y][x] = T.STONE_PATH;
 
   // Path going UP
   for (let y = 0; y < cy; y++) {
@@ -359,7 +539,7 @@ function generateMapE5() {
   // Open passage on top
   for (let x = cx - 5; x <= cx + 5; x++)
     for (let y = 0; y < 3; y++)
-      if (map[y][x] === T.TREE) map[y][x] = T.STONE_PATH;
+      if (map[y][x] === T.TREE_CARVALHO) map[y][x] = T.STONE_PATH;
 
   // Path going DOWN
   for (let y = cy; y < MAP_H; y++) {
@@ -370,7 +550,7 @@ function generateMapE5() {
   // Open passage on bottom
   for (let x = cx - 5; x <= cx + 5; x++)
     for (let y = MAP_H - 3; y < MAP_H; y++)
-      if (map[y][x] === T.TREE) map[y][x] = T.STONE_PATH;
+      if (map[y][x] === T.TREE_CARVALHO) map[y][x] = T.STONE_PATH;
 
   // === CHURCH at the top (outside the plaza, connected by path) ===
   const churchW = 15, churchH = 13;
@@ -477,9 +657,9 @@ function generateMapE5() {
       if (r < 0.25) map[ty][tx] = T.FLOWERS;
       else if (r < 0.40) map[ty][tx] = T.BUSH;
     } else {
-      // Wilderness
+      // Wilderness (mix: ~70% carvalho, ~30% pinos)
       const r = rng();
-      if (r < 0.22) map[ty][tx] = T.TREE;
+      if (r < 0.22) map[ty][tx] = rng() < 0.7 ? T.TREE_CARVALHO : T.TREE_PINOS;
       else if (r < 0.35) map[ty][tx] = T.BUSH;
       else if (r < 0.42) map[ty][tx] = T.FLOWERS;
       else if (r < 0.48) map[ty][tx] = T.TALL_GRASS;
@@ -495,7 +675,7 @@ function generateMapE5() {
     if (map[ty][tx] === T.GRASS) map[ty][tx] = T.DARK_GRASS;
   }
 
-  // === CEMITÉRIO (área dos esqueletos) - NE corner ===
+  // === CEMITÃ‰RIO (área dos esqueletos) - NE corner ===
   const cemX = 75, cemY = 10;
   for (let y = cemY; y <= cemY + 15; y++)
     for (let x = cemX; x <= cemX + 14; x++)
@@ -577,7 +757,7 @@ function buildWalls(map, sx, sy, w, h, wallTile, floorTile) {
 }
 
 // ============================
-// E4 MAP - PLANÍCIE VERDE
+// E4 MAP - PLANÃCIE VERDE
 // ============================
 function generateMapE4() {
   const map = Array.from({length: MAP_H}, () => Array(MAP_W).fill(T.GRASS));
@@ -586,8 +766,8 @@ function generateMapE4() {
   // Tree border (open on right side where it connects to E5)
   for (let y = 0; y < MAP_H; y++)
     for (let x = 0; x < MAP_W; x++) {
-      if (x < 3 || y < 3 || y >= MAP_H-3) map[y][x] = T.TREE;
-      if (x >= MAP_W-3 && (y < 45 || y > 55)) map[y][x] = T.TREE;
+      if (x < 3 || y < 3 || y >= MAP_H-3) map[y][x] = T.TREE_CARVALHO;
+      if (x >= MAP_W-3 && (y < 45 || y > 55)) map[y][x] = T.TREE_CARVALHO;
     }
 
   // Dirt path connecting to E5 on the right
@@ -611,7 +791,7 @@ function generateMapE4() {
     if (r < 0.20) map[ty][tx] = T.FLOWERS;
     else if (r < 0.38) map[ty][tx] = T.TALL_GRASS;
     else if (r < 0.42) map[ty][tx] = T.BUSH;
-    else if (r < 0.45) map[ty][tx] = T.TREE;
+    else if (r < 0.45) map[ty][tx] = T.TREE_CARVALHO;
     else if (r < 0.47) map[ty][tx] = T.ROCK;
     else if (r < 0.49) map[ty][tx] = T.MUSHROOM;
   }
@@ -646,14 +826,14 @@ function generateMapF5() {
   const rng = mulberry32(137);
   const cx = 50, cy = 50;
 
-  // ── Tree border (open on top to connect to E5) ──
+  // â”€â”€ Tree border (open on top to connect to E5) â”€â”€
   for (let y = 0; y < MAP_H; y++)
     for (let x = 0; x < MAP_W; x++) {
-      if (x < 3 || x >= MAP_W - 3 || y >= MAP_H - 3) map[y][x] = T.TREE;
-      if (y < 3 && (x < 45 || x > 55)) map[y][x] = T.TREE;
+      if (x < 3 || x >= MAP_W - 3 || y >= MAP_H - 3) map[y][x] = T.TREE_CARVALHO;
+      if (y < 3 && (x < 45 || x > 55)) map[y][x] = T.TREE_CARVALHO;
     }
 
-  // ── Organic stone plaza (center) ──
+  // â”€â”€ Organic stone plaza (center) â”€â”€
   function isPlaza(x, y) {
     const dx = x - cx, dy = y - cy;
     const rx = 15, ry = 13;
@@ -667,14 +847,14 @@ function generateMapF5() {
     for (let x = 0; x < MAP_W; x++)
       if (isPlaza(x, y)) map[y][x] = T.STONE_PATH;
 
-  // ── 4 Paths to edges (3 tiles wide) ──
+  // â”€â”€ 4 Paths to edges (3 tiles wide) â”€â”€
   // UP
   for (let y = 0; y < cy; y++) {
     if (map[y][cx - 1] !== T.STONE_PATH) map[y][cx - 1] = T.STONE_PATH;
     if (map[y][cx] !== T.STONE_PATH) map[y][cx] = T.STONE_PATH;
     if (map[y][cx + 1] !== T.STONE_PATH) map[y][cx + 1] = T.STONE_PATH;
   }
-  for (let x = cx - 5; x <= cx + 5; x++) for (let y = 0; y < 3; y++) if (map[y][x] === T.TREE) map[y][x] = T.STONE_PATH;
+  for (let x = cx - 5; x <= cx + 5; x++) for (let y = 0; y < 3; y++) if (map[y][x] === T.TREE_CARVALHO) map[y][x] = T.STONE_PATH;
 
   // DOWN
   for (let y = cy; y < MAP_H; y++) {
@@ -682,7 +862,7 @@ function generateMapF5() {
     if (map[y][cx] !== T.STONE_PATH) map[y][cx] = T.STONE_PATH;
     if (map[y][cx + 1] !== T.STONE_PATH) map[y][cx + 1] = T.STONE_PATH;
   }
-  for (let x = cx - 5; x <= cx + 5; x++) for (let y = MAP_H - 3; y < MAP_H; y++) if (map[y][x] === T.TREE) map[y][x] = T.STONE_PATH;
+  for (let x = cx - 5; x <= cx + 5; x++) for (let y = MAP_H - 3; y < MAP_H; y++) if (map[y][x] === T.TREE_CARVALHO) map[y][x] = T.STONE_PATH;
 
   // LEFT
   for (let x = 0; x < cx; x++) {
@@ -698,20 +878,20 @@ function generateMapF5() {
     if (map[cy][x] !== T.STONE_PATH) map[cy][x] = T.STONE_PATH;
     if (map[cy + 1][x] !== T.STONE_PATH) map[cy + 1][x] = T.STONE_PATH;
   }
-  for (let y = cy - 5; y <= cy + 5; y++) for (let x = MAP_W - 3; x < MAP_W; x++) if (map[y][x] === T.TREE) map[y][x] = T.STONE_PATH;
+  for (let y = cy - 5; y <= cy + 5; y++) for (let x = MAP_W - 3; x < MAP_W; x++) if (map[y][x] === T.TREE_CARVALHO) map[y][x] = T.STONE_PATH;
 
-  // ── WELL in the center ──
+  // â”€â”€ WELL in the center â”€â”€
   map[cy][cx] = T.WELL;
 
-  // ── Benches along paths near plaza ──
+  // â”€â”€ Benches along paths near plaza â”€â”€
   map[cy - 2][cx - 4] = T.BENCH; map[cy - 2][cx + 4] = T.BENCH;
   map[cy + 2][cx - 4] = T.BENCH; map[cy + 2][cx + 4] = T.BENCH;
   map[cy - 4][cx - 2] = T.BENCH; map[cy - 4][cx + 2] = T.BENCH;
   map[cy + 4][cx - 2] = T.BENCH; map[cy + 4][cx + 2] = T.BENCH;
 
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // CHURCH (top-right) with cemetery
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const chX = 68, chY = 8, chW = 15, chH = 13;
   buildWalls(map, chX, chY, chW, chH, T.CHURCH_WALL, T.CHURCH_FLOOR);
   const chCx = chX + Math.floor(chW / 2); // center X of church
@@ -738,7 +918,7 @@ function generateMapF5() {
   // Connect horizontally to main path
   for (let x = cx + 1; x <= chCx; x++) { map[cy - 3][x] = T.STONE_PATH; map[cy - 4][x] = T.STONE_PATH; }
 
-  // ── Cemetery (east of church) ──
+  // â”€â”€ Cemetery (east of church) â”€â”€
   const cemX = 72, cemY = 24;
   for (let y = cemY; y <= cemY + 12; y++)
     for (let x = cemX; x <= cemX + 14; x++)
@@ -775,9 +955,9 @@ function generateMapF5() {
         map[y][x] = T.DARK_GRASS;
     }
 
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // LAKE (top-left, decorative)
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   for (let y = 5; y <= 20; y++)
     for (let x = 5; x <= 25; x++) {
       const d = Math.sqrt((x - 14) ** 2 + (y - 12) ** 2);
@@ -786,9 +966,9 @@ function generateMapF5() {
       else if (d + noise < 6.5 && map[y][x] === T.GRASS) map[y][x] = T.SAND;
     }
 
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // SLIME FARM (upper-left, below lake)
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const slX = 8, slY = 26;
   for (let y = slY; y <= slY + 10; y++)
     for (let x = slX; x <= slX + 15; x++)
@@ -804,9 +984,9 @@ function generateMapF5() {
   map[slY + 9][slX] = T.HAY; map[slY + 9][slX + 14] = T.HAY;
   map[slY + 5][slX + 7] = T.HAY;
 
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // HOUSES with colored roofs
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   // --- House 1: Large dark blue house (left of plaza) ---
   const h1X = 8, h1Y = 42, h1W = 12, h1H = 9;
@@ -915,13 +1095,13 @@ function generateMapF5() {
   // Connect to main horizontal road
   for (let y = cy + 1; y <= h5Y - 2; y++) { map[y][h5X + 8] = T.STONE_PATH; }
 
-  // ── Additional small paths connecting houses to main roads ──
+  // â”€â”€ Additional small paths connecting houses to main roads â”€â”€
   // Connect h4 path to the row of 3 houses
   for (let x = h5X + 3; x <= h6X + 4; x++) map[h4Y + h4H + 2][x] = T.STONE_PATH;
 
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // ENVIRONMENT DECORATION
-  // ══════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   for (let i = 0; i < 700; i++) {
     const tx = 4 + Math.floor(rng() * (MAP_W - 8));
     const ty = 4 + Math.floor(rng() * (MAP_H - 8));
@@ -933,7 +1113,7 @@ function generateMapF5() {
       else if (r < 0.40) map[ty][tx] = T.BUSH;
     } else {
       const r = rng();
-      if (r < 0.18) map[ty][tx] = T.TREE;
+      if (r < 0.18) map[ty][tx] = T.TREE_CARVALHO;
       else if (r < 0.30) map[ty][tx] = T.BUSH;
       else if (r < 0.40) map[ty][tx] = T.FLOWERS;
       else if (r < 0.48) map[ty][tx] = T.TALL_GRASS;
@@ -949,7 +1129,7 @@ function generateMapF5() {
     if (map[ty][tx] === T.GRASS) map[ty][tx] = T.DARK_GRASS;
   }
 
-  // ── Flower clusters near plaza ──
+  // â”€â”€ Flower clusters near plaza â”€â”€
   const flowerSpots = [[cx - 8, cy - 8], [cx + 8, cy - 8], [cx - 8, cy + 8], [cx + 8, cy + 8],
     [cx - 12, cy], [cx + 12, cy], [cx, cy - 10], [cx, cy + 10]];
   for (const [fx, fy] of flowerSpots) {
@@ -961,7 +1141,7 @@ function generateMapF5() {
       }
   }
 
-  // ── BUILDINGS metadata ──
+  // â”€â”€ BUILDINGS metadata â”€â”€
   const buildings = [
     { x: chX, y: chY, w: chW, h: chH, roofTile: T.ROOF_STONE, doorX: chCx, doorY: chY + chH - 1 },
     { x: h1X, y: h1Y, w: h1W, h: h1H, roofTile: T.ROOF_BLUE, doorX: h1X + 5, doorY: h1Y + h1H - 1 },
@@ -987,8 +1167,8 @@ function generateMapF5() {
   // Tree border (open on top for E5 connection)
   for (let y = 0; y < MAP_H; y++)
     for (let x = 0; x < MAP_W; x++) {
-      if (x < 3 || x >= MAP_W - 3 || y >= MAP_H - 3) map[y][x] = T.TREE;
-      if (y < 3 && (x < 45 || x > 55)) map[y][x] = T.TREE;
+      if (x < 3 || x >= MAP_W - 3 || y >= MAP_H - 3) map[y][x] = T.TREE_CARVALHO;
+      if (y < 3 && (x < 45 || x > 55)) map[y][x] = T.TREE_CARVALHO;
     }
 
   // Simple cross-shaped stone paths (3 tiles wide, all straight)
@@ -1057,7 +1237,7 @@ function generateMapF5() {
     if (r < 0.15) map[ty][tx] = T.FLOWERS;
     else if (r < 0.25) map[ty][tx] = T.TALL_GRASS;
     else if (r < 0.35) map[ty][tx] = T.BUSH;
-    else if (r < 0.42) map[ty][tx] = T.TREE;
+    else if (r < 0.42) map[ty][tx] = T.TREE_CARVALHO;
     else if (r < 0.45) map[ty][tx] = T.ROCK;
     else if (r < 0.47) map[ty][tx] = T.MUSHROOM;
   }
@@ -1074,28 +1254,108 @@ function generateMapF5() {
   for (let y = 30; y <= 40; y++) { map[y][55] = T.FENCE; map[y][65] = T.FENCE; }
   map[40][60] = T.GRASS; // gate
 
+  // Church entrance facade (portal to IGREJA)
+  map[42][49] = T.CHURCH_WALL; map[42][50] = T.CHURCH_WALL; map[42][51] = T.CHURCH_WALL;
+  map[43][49] = T.CHURCH_WALL; map[43][51] = T.CHURCH_WALL;
+  map[44][49] = T.CHURCH_WALL; map[44][51] = T.CHURCH_WALL;
+  // Portal tiles (door openings)
+  map[43][50] = T.CHURCH_FLOOR; map[44][50] = T.CHURCH_FLOOR;
+  // Cross on top
+  map[41][50] = T.CROSS;
+
   const buildings = [];
   return { map, buildings };
 }
 
+// IGREJA MAP - Interior da igreja (7x8)
+function generateMapIGREJA() {
+  const W = 7, H = 8;
+  const map = Array.from({length: H}, () => Array(W).fill(T.CHURCH_FLOOR));
+  // Walls around the perimeter
+  for (let x = 0; x < W; x++) { map[0][x] = T.CHURCH_WALL; map[H-1][x] = T.CHURCH_WALL; }
+  for (let y = 0; y < H; y++) { map[y][0] = T.CHURCH_WALL; map[y][W-1] = T.CHURCH_WALL; }
+  // Door at bottom center (tile 3,7) — this is the portal exit tile
+  map[H-1][3] = T.CHURCH_FLOOR;
+  // Altar at top center
+  map[1][3] = T.ALTAR;
+  // Cross above altar
+  map[1][2] = T.CROSS; map[1][4] = T.CROSS;
+  // Pews (rows of church pews)
+  for (let y = 3; y <= 5; y++) { map[y][1] = T.CHURCH_PEW; map[y][2] = T.CHURCH_PEW; map[y][4] = T.CHURCH_PEW; map[y][5] = T.CHURCH_PEW; }
+  // Red carpet aisle
+  for (let y = 2; y <= 6; y++) map[y][3] = T.RED_CARPET;
+  // Windows on sides
+  map[2][0] = T.WINDOW_STONE; map[4][0] = T.WINDOW_STONE;
+  map[2][W-1] = T.WINDOW_STONE; map[4][W-1] = T.WINDOW_STONE;
+  // Torches
+  map[3][0] = T.TORCH_WALL; map[3][W-1] = T.TORCH_WALL;
+  return { map, buildings: [] };
+}
+
 const e5Result = generateMapE5();
 const f5Result = generateMapF5();
+const igrejaResult = generateMapIGREJA();
+
+// Load maps from disk if available, otherwise use generated
 const gameMaps = {
-  E5: e5Result.map,
-  E4: generateMapE4(),
-  F5: f5Result.map
+  E5: loadMapFromDisk('E5') || f5Result.map,
+  E4: loadMapFromDisk('E4') || generateMapE4(),
+  F5: loadMapFromDisk('F5') || e5Result.map,
+  IGREJA: loadMapFromDisk('IGREJA') || igrejaResult.map
 };
 const gameBuildings = {
-  E5: e5Result.buildings,
+  E5: f5Result.buildings,
   E4: [],
-  F5: f5Result.buildings
+  F5: e5Result.buildings,
+  IGREJA: igrejaResult.buildings
 };
 
-// Image objects per quadrant: { id, src (base64 data URL), x, y, width, height (in tiles) }
-const gameMapObjects = { E5: [], E4: [], F5: [] };
+// Image objects per quadrant - load from disk
+const gameMapObjects = {
+  E5: loadObjectsFromDisk('E5') || [],
+  E4: loadObjectsFromDisk('E4') || [],
+  F5: loadObjectsFromDisk('F5') || [],
+  IGREJA: loadObjectsFromDisk('IGREJA') || []
+};
 
-// Per-cell solid grid per quadrant: Set of "x,y" keys that are individually solid
-const solidCells = { E5: new Set(), E4: new Set(), F5: new Set() };
+// Per-cell solid grid per quadrant - load from disk
+const solidCells = {
+  E5: loadSolidCellsFromDisk('E5') || new Set(),
+  E4: loadSolidCellsFromDisk('E4') || new Set(),
+  F5: loadSolidCellsFromDisk('F5') || new Set(),
+  IGREJA: loadSolidCellsFromDisk('IGREJA') || new Set()
+};
+
+// Per-cell "behind" grid per quadrant (tiles where player passes behind objects)
+const behindCells = {
+  E5: loadBehindCellsFromDisk('E5') || new Set(),
+  E4: loadBehindCellsFromDisk('E4') || new Set(),
+  F5: loadBehindCellsFromDisk('F5') || new Set(),
+  IGREJA: loadBehindCellsFromDisk('IGREJA') || new Set()
+};
+
+// Mob spawn definitions per quadrant - load from disk
+const mobSpawns = {
+  E5: loadSpawnsFromDisk('E5') || [],
+  E4: loadSpawnsFromDisk('E4') || [],
+  F5: loadSpawnsFromDisk('F5') || [],
+  IGREJA: loadSpawnsFromDisk('IGREJA') || []
+};
+
+// Load NPC positions from disk
+(function restoreNpcPositions() {
+  const saved = loadNpcPositionsFromDisk();
+  if (saved) {
+    for (const pos of saved) {
+      const npc = NPC_DEFS.find(n => n.id === pos.id);
+      if (npc) {
+        npc.x = pos.x;
+        npc.y = pos.y;
+        console.log(`[Persist] NPC ${npc.id} restaurado em (${npc.x}, ${npc.y})`);
+      }
+    }
+  }
+})();
 
 // ============================
 // MAP EDITOR API
@@ -1103,11 +1363,14 @@ const solidCells = { E5: new Set(), E4: new Set(), F5: new Set() };
 app.get('/api/editor/map/:quadrant', (req, res) => {
   const q = req.params.quadrant;
   if (!gameMaps[q]) return res.status(404).json({ error: 'Quadrant not found' });
+  const { w, h } = getMapSize(q);
   res.json({
-    map: gameMaps[q], width: MAP_W, height: MAP_H, tileTypes: T,
+    map: gameMaps[q], width: w, height: h, tileTypes: T,
     objects: gameMapObjects[q] || [], blockedTiles: [...BLOCKED_TILES],
     npcs: NPC_DEFS.filter(n => n.quadrant === q).map(n => ({ id: n.id, name: n.name, x: n.x, y: n.y, sprite: n.sprite })),
-    solidCells: solidCells[q] ? [...solidCells[q]] : []
+    solidCells: solidCells[q] ? [...solidCells[q]] : [],
+    behindCells: behindCells[q] ? [...behindCells[q]] : [],
+    spawns: mobSpawns[q] || []
   });
 });
 
@@ -1125,6 +1388,7 @@ app.post('/api/editor/objects/:quadrant', (req, res) => {
   gameMapObjects[q].push(obj);
   // Notify players
   notifyQuadrantMapUpdate(q);
+  saveObjectsToDisk(q, gameMapObjects[q]);
   console.log(`[Editor] Objeto de imagem adicionado em ${q} (${x},${y} ${width}x${height})`);
   res.json({ success: true, object: obj });
 });
@@ -1142,6 +1406,7 @@ app.put('/api/editor/objects/:quadrant/:id', (req, res) => {
   if (width != null && +width > 0) obj.width = +width;
   if (height != null && +height > 0) obj.height = +height;
   notifyQuadrantMapUpdate(q);
+  saveObjectsToDisk(q, gameMapObjects[q]);
   console.log(`[Editor] Objeto atualizado em ${q}: ${id} (${obj.x},${obj.y} ${obj.width}x${obj.height})`);
   res.json({ success: true, object: obj });
 });
@@ -1155,6 +1420,7 @@ app.delete('/api/editor/objects/:quadrant/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Object not found' });
   gameMapObjects[q].splice(idx, 1);
   notifyQuadrantMapUpdate(q);
+  saveObjectsToDisk(q, gameMapObjects[q]);
   console.log(`[Editor] Objeto de imagem removido de ${q}: ${id}`);
   res.json({ success: true });
 });
@@ -1200,8 +1466,59 @@ app.put('/api/editor/npcs/:id', (req, res) => {
       p.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === npc.quadrant));
     }
   }
+  saveNpcPositionsToDisk(NPC_DEFS);
   console.log(`[Editor] NPC ${npc.id} movido para (${npc.x}, ${npc.y})`);
   res.json({ success: true, npc: { id: npc.id, name: npc.name, x: npc.x, y: npc.y, sprite: npc.sprite } });
+});
+
+// ============================
+// MOB SPAWN EDITOR API
+// ============================
+app.get('/api/editor/spawns/:quadrant', (req, res) => {
+  const q = req.params.quadrant;
+  res.json({ spawns: mobSpawns[q] || [] });
+});
+
+app.post('/api/editor/spawns/:quadrant', (req, res) => {
+  const q = req.params.quadrant;
+  const { type, x, y, count, radius } = req.body;
+  if (!type || x == null || y == null) return res.status(400).json({ error: 'Missing fields: type, x, y' });
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const spawn = { id, type, x: +x, y: +y, count: +count || 4, radius: +radius || 5 };
+  if (!mobSpawns[q]) mobSpawns[q] = [];
+  mobSpawns[q].push(spawn);
+  saveSpawnsToDisk(q, mobSpawns[q]);
+  console.log(`[Editor] Spawn adicionado em ${q}: ${type} (${x},${y}) count=${spawn.count} radius=${spawn.radius}`);
+  res.json({ success: true, spawn });
+});
+
+app.put('/api/editor/spawns/:quadrant/:id', (req, res) => {
+  const q = req.params.quadrant;
+  const id = req.params.id;
+  if (!mobSpawns[q]) return res.status(404).json({ error: 'Quadrant not found' });
+  const spawn = mobSpawns[q].find(s => s.id === id);
+  if (!spawn) return res.status(404).json({ error: 'Spawn not found' });
+  const { x, y, count, radius, type } = req.body;
+  if (x != null) spawn.x = +x;
+  if (y != null) spawn.y = +y;
+  if (count != null && +count > 0) spawn.count = +count;
+  if (radius != null && +radius > 0) spawn.radius = +radius;
+  if (type) spawn.type = type;
+  saveSpawnsToDisk(q, mobSpawns[q]);
+  console.log(`[Editor] Spawn atualizado em ${q}: ${spawn.id} type=${spawn.type} (${spawn.x},${spawn.y})`);
+  res.json({ success: true, spawn });
+});
+
+app.delete('/api/editor/spawns/:quadrant/:id', (req, res) => {
+  const q = req.params.quadrant;
+  const id = req.params.id;
+  if (!mobSpawns[q]) return res.status(404).json({ error: 'Quadrant not found' });
+  const idx = mobSpawns[q].findIndex(s => s.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Spawn not found' });
+  mobSpawns[q].splice(idx, 1);
+  saveSpawnsToDisk(q, mobSpawns[q]);
+  console.log(`[Editor] Spawn removido de ${q}: ${id}`);
+  res.json({ success: true });
 });
 
 // ============================
@@ -1214,30 +1531,78 @@ app.get('/api/editor/solidcells/:quadrant', (req, res) => {
 
 app.post('/api/editor/solidcells/:quadrant', (req, res) => {
   const q = req.params.quadrant;
-  const { add, remove } = req.body; // add: ["x,y", ...], remove: ["x,y", ...]
+  const { cells, add, remove } = req.body;
   if (!solidCells[q]) solidCells[q] = new Set();
-  if (Array.isArray(add)) {
-    for (const key of add) solidCells[q].add(key);
+  // Full replace mode: if 'cells' array is provided, replace everything
+  if (Array.isArray(cells)) {
+    solidCells[q] = new Set(cells);
+  } else {
+    // Incremental mode (legacy)
+    if (Array.isArray(add)) {
+      for (const key of add) solidCells[q].add(key);
+    }
+    if (Array.isArray(remove)) {
+      for (const key of remove) solidCells[q].delete(key);
+    }
   }
-  if (Array.isArray(remove)) {
-    for (const key of remove) solidCells[q].delete(key);
-  }
+  saveSolidCellsToDisk(q, solidCells[q]);
+  // Notify players so collision updates in real-time
+  notifyQuadrantMapUpdate(q);
   console.log(`[Editor] SolidCells ${q}: ${solidCells[q].size} cells`);
   res.json({ success: true, count: solidCells[q].size });
 });
+
+// ============================
+// PER-CELL BEHIND GRID API (tiles where player passes behind objects)
+// ============================
+app.get('/api/editor/behindcells/:quadrant', (req, res) => {
+  const q = req.params.quadrant;
+  res.json({ cells: behindCells[q] ? [...behindCells[q]] : [] });
+});
+
+app.post('/api/editor/behindcells/:quadrant', (req, res) => {
+  const q = req.params.quadrant;
+  const { cells, add, remove } = req.body;
+  if (!behindCells[q]) behindCells[q] = new Set();
+  if (Array.isArray(cells)) {
+    behindCells[q] = new Set(cells);
+  } else {
+    if (Array.isArray(add)) {
+      for (const key of add) behindCells[q].add(key);
+    }
+    if (Array.isArray(remove)) {
+      for (const key of remove) behindCells[q].delete(key);
+    }
+  }
+  saveBehindCellsToDisk(q, behindCells[q]);
+  notifyQuadrantMapUpdate(q);
+  console.log(`[Editor] BehindCells ${q}: ${behindCells[q].size} cells`);
+  res.json({ success: true, count: behindCells[q].size });
+});
+
+// Helper to build mapData payload for a quadrant
+function buildMapData(q) {
+  const qDef = QUADRANTS[q];
+  const { w, h } = getMapSize(q);
+  // Portals relevant to this quadrant
+  const portals = PORTALS.filter(p => p.fromQ === q).map(p => ({ x: p.x, y: p.y, toQ: p.toQ }));
+  return {
+    map: gameMaps[q], width: w, height: h, tileTypes: T,
+    quadrant: q, quadrantName: qDef.name, neighbors: qDef.neighbors,
+    buildings: gameBuildings[q] || [],
+    objects: gameMapObjects[q] || [],
+    solidCells: solidCells[q] ? [...solidCells[q]] : [],
+    behindCells: behindCells[q] ? [...behindCells[q]] : [],
+    portals
+  };
+}
 
 // Helper to notify all players in a quadrant
 function notifyQuadrantMapUpdate(q) {
   let count = 0;
   for (const [sid, p] of Object.entries(players)) {
     if (p.quadrant === q) {
-      const qDef = QUADRANTS[q];
-      p.socket.emit('mapData', {
-        map: gameMaps[q], width: MAP_W, height: MAP_H, tileTypes: T,
-        quadrant: q, quadrantName: qDef.name, neighbors: qDef.neighbors,
-        buildings: gameBuildings[q] || [],
-        objects: gameMapObjects[q] || []
-      });
+      p.socket.emit('mapData', buildMapData(q));
       count++;
     }
   }
@@ -1248,41 +1613,73 @@ app.post('/api/editor/map/:quadrant', (req, res) => {
   const q = req.params.quadrant;
   if (!gameMaps[q]) return res.status(404).json({ error: 'Quadrant not found' });
   const newMap = req.body.map;
-  if (!newMap || !Array.isArray(newMap) || newMap.length !== MAP_H) {
+  const { w: edW, h: edH } = getMapSize(q);
+  if (!newMap || !Array.isArray(newMap) || newMap.length !== edH) {
     return res.status(400).json({ error: 'Invalid map data' });
   }
   // Apply the new map
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
+  for (let y = 0; y < edH; y++) {
+    for (let x = 0; x < edW; x++) {
       gameMaps[q][y][x] = newMap[y][x];
     }
   }
   // Notify all connected players in this quadrant to reload map
   notifyQuadrantMapUpdate(q);
-  console.log(`[Editor] Mapa ${q} atualizado!`);
+  // Persist to disk
+  saveMapToDisk(q, gameMaps[q]);
+  console.log(`[Editor] Mapa ${q} atualizado e salvo em disco!`);
   res.json({ success: true });
 });
 
+const TREE_TILE_TYPES = new Set([T.TREE_CARVALHO, T.TREE_BETULA, T.TREE_CARVALHO_SMALL, T.TREE_MAGICA, T.TREE_MANGUE, T.TREE_PINHEIRO, T.TREE_PINOS]);
+
+function getMapSize(quadrant) {
+  const qDef = QUADRANTS[quadrant];
+  return { w: (qDef && qDef.mapW) || MAP_W, h: (qDef && qDef.mapH) || MAP_H };
+}
+
 function isBlocked(x, y, quadrant) {
-  if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return true;
-  const q = quadrant || 'E5';
+  const q = quadrant || 'F5';
+  const { w, h } = getMapSize(q);
+  if (x < 0 || x >= w || y < 0 || y >= h) return true;
   const map = gameMaps[q];
+  if (!map) return true;
   const fx = Math.floor(x), fy = Math.floor(y);
+  if (fy >= map.length || fx >= map[0].length) return true;
   if (BLOCKED_TILES.has(map[fy][fx])) return true;
+  // Tree tiles also block the tile above them (trees are 2 tiles tall visually)
+  if (fy + 1 < h && fy + 1 < map.length && TREE_TILE_TYPES.has(map[fy + 1][fx])) return true;
   // Check per-cell solid grid
   if (solidCells[q] && solidCells[q].has(`${fx},${fy}`)) return true;
-  // Check image objects collision
-  const objs = gameMapObjects[q] || [];
-  for (const obj of objs) {
-    if (x >= obj.x && x < obj.x + obj.width && y >= obj.y && y < obj.y + obj.height) return true;
-  }
   return false;
 }
 
 function canMoveTo(x, y, quadrant) {
-  const pad = 0.25;
-  return !isBlocked(x - pad, y - pad, quadrant) && !isBlocked(x + pad, y - pad, quadrant)
-    && !isBlocked(x - pad, y + pad, quadrant) && !isBlocked(x + pad, y + pad, quadrant);
+  // Hitbox ~0.6 tile centrada no personagem
+  const pad = 0.3;
+  const left = x - pad, right = x + pad;
+  const top = y - pad, bottom = y + pad;
+  return !isBlocked(left, top, quadrant) && !isBlocked(right, top, quadrant)
+    && !isBlocked(left, bottom, quadrant) && !isBlocked(right, bottom, quadrant);
+}
+
+// Find nearest safe (non-blocked) position. Returns {x, y} or fallback to spawn.
+function findSafePosition(x, y, quadrant) {
+  if (canMoveTo(x, y, quadrant)) return { x, y };
+  const { w, h } = getMapSize(quadrant);
+  for (let r = 1; r <= 15; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const tx = x + dx, ty = y + dy;
+        if (tx >= 1 && tx < w - 1 && ty >= 1 && ty < h - 1 && canMoveTo(tx, ty, quadrant)) {
+          return { x: tx, y: ty };
+        }
+      }
+    }
+  }
+  const qDef = QUADRANTS[quadrant];
+  return { x: qDef ? qDef.spawnX : x, y: qDef ? qDef.spawnY : y };
 }
 
 // ============================
@@ -1290,33 +1687,91 @@ function canMoveTo(x, y, quadrant) {
 // ============================
 const enemies = [];
 
+// Mob type stats
+const MOB_STATS = {
+  skeleton: { hp: 15, maxHp: 15, damage: 5 },
+  slime: { hp: 5, maxHp: 5, damage: 0 },
+  zombie: { hp: 15, maxHp: 15, damage: 1 }
+};
+
 function spawnEnemies() {
   const rng = mulberry32(123);
-  // E5 - Esqueletos (cemitério)
-  for (let i = 0; i < 8; i++) {
-    let x, y, attempts = 0;
-    do { x = 76 + Math.floor(rng() * 13); y = 11 + Math.floor(rng() * 14); attempts++; }
-    while (isBlocked(x, y, 'E5') && attempts < 50);
-    enemies.push({
-      id: `skeleton_${i}`, type: 'skeleton', x, y, spawnX: x, spawnY: y,
-      hp: 15, maxHp: 15, damage: 5, dead: false, deathTime: 0,
-      direction: 'right', lastAttack: 0, lastWander: 0,
-      quadrant: 'E5'
-    });
+
+  // Spawn from saved mob spawn definitions (editor-defined)
+  for (const quadrant of Object.keys(mobSpawns)) {
+    const spawns = mobSpawns[quadrant];
+    for (const spawn of spawns) {
+      const stats = MOB_STATS[spawn.type];
+      if (!stats) { console.log(`[Spawn] Tipo desconhecido: ${spawn.type}`); continue; }
+      for (let i = 0; i < spawn.count; i++) {
+        let x, y, attempts = 0;
+        do {
+          x = spawn.x + (rng() - 0.5) * spawn.radius * 2;
+          y = spawn.y + (rng() - 0.5) * spawn.radius * 2;
+          attempts++;
+        } while (isBlocked(x, y, quadrant) && attempts < 50);
+        const extra = spawn.type === 'cow' ? { fleeTarget: null, lastHitTime: 0, animState: 'idle', animTimer: 0 } : {};
+        enemies.push({
+          id: `${spawn.type}_${spawn.id}_${i}`, type: spawn.type, x, y, spawnX: x, spawnY: y,
+          hp: stats.hp, maxHp: stats.maxHp, damage: stats.damage, dead: false, deathTime: 0,
+          direction: 'right', lastAttack: 0, lastWander: 0,
+          quadrant, ...extra
+        });
+        console.log(`[Spawn] ${spawn.type} #${i} em ${quadrant} (${x.toFixed(1)}, ${y.toFixed(1)})`);
+      }
+    }
   }
-  // E5 - Slimes (fazenda)
-  for (let i = 0; i < 8; i++) {
-    let x, y, attempts = 0;
-    do { x = 9 + Math.floor(rng() * 14); y = 76 + Math.floor(rng() * 9); attempts++; }
-    while (isBlocked(x, y, 'E5') && attempts < 50);
-    enemies.push({
-      id: `slime_${i}`, type: 'slime', x, y, spawnX: x, spawnY: y,
-      hp: 5, maxHp: 5, damage: 0, dead: false, deathTime: 0,
-      direction: 'right', lastAttack: 0, lastWander: 0,
-      quadrant: 'E5'
-    });
+
+  // Fallback: if no editor spawns exist for E5, use hardcoded defaults
+  const e5Spawns = mobSpawns['F5'] || [];
+  if (e5Spawns.length === 0) {
+    // E5 - Esqueletos (cemitério)
+    for (let i = 0; i < 8; i++) {
+      let x, y, attempts = 0;
+      do { x = 76 + Math.floor(rng() * 13); y = 11 + Math.floor(rng() * 14); attempts++; }
+      while (isBlocked(x, y, 'F5') && attempts < 50);
+      enemies.push({
+        id: `skeleton_${i}`, type: 'skeleton', x, y, spawnX: x, spawnY: y,
+        hp: 15, maxHp: 15, damage: 5, dead: false, deathTime: 0,
+        direction: 'right', lastAttack: 0, lastWander: 0,
+        quadrant: 'F5'
+      });
+    }
+    // E5 - Slimes (fazenda)
+    for (let i = 0; i < 8; i++) {
+      let x, y, attempts = 0;
+      do { x = 9 + Math.floor(rng() * 14); y = 76 + Math.floor(rng() * 9); attempts++; }
+      while (isBlocked(x, y, 'F5') && attempts < 50);
+      enemies.push({
+        id: `slime_${i}`, type: 'slime', x, y, spawnX: x, spawnY: y,
+        hp: 5, maxHp: 5, damage: 0, dead: false, deathTime: 0,
+        direction: 'right', lastAttack: 0, lastWander: 0,
+        quadrant: 'F5'
+      });
+    }
   }
-  // E4 - Vacas (Planície Verde)
+
+  // Fallback: if no editor spawns exist for F5, spawn slimes on MUD tiles
+  const f5Spawns = mobSpawns['E5'] || [];
+  if (f5Spawns.length === 0 && gameMaps['E5']) {
+    const mudTiles = [];
+    for (let y = 0; y < MAP_H; y++)
+      for (let x = 0; x < MAP_W; x++)
+        if (gameMaps['E5'][y][x] === T.MUD) mudTiles.push({ x, y });
+    const slimeCount = Math.min(10, mudTiles.length);
+    for (let i = 0; i < slimeCount; i++) {
+      const idx = Math.floor(rng() * mudTiles.length);
+      const { x, y } = mudTiles[idx];
+      enemies.push({
+        id: `slime_f5_${i}`, type: 'slime', x, y, spawnX: x, spawnY: y,
+        hp: 5, maxHp: 5, damage: 0, dead: false, deathTime: 0,
+        direction: 'right', lastAttack: 0, lastWander: 0,
+        quadrant: 'E5'
+      });
+    }
+  }
+
+  // E4 - Vacas (Planície Verde) - always hardcoded for now
   const grassTiles = new Set([T.GRASS, T.DARK_GRASS, T.TALL_GRASS, T.FLOWERS]);
   for (let i = 0; i < 8; i++) {
     let x, y, attempts = 0;
@@ -1356,7 +1811,7 @@ function spawnGroundItem(itemId, quantity, x, y, quadrant) {
     icon: item.icon || null,
     type: item.type,
     spawnTime: Date.now(),
-    quadrant: quadrant || 'E5'
+    quadrant: quadrant || 'F5'
   });
 }
 
@@ -1383,7 +1838,7 @@ function saveCharacter(p) {
     p.strength, p.intelligence, p.vitality, p.defense, p.luck, p.skill_points,
     p.equipped_weapon, p.equipped_armor, p.equipped_helmet || '', p.equipped_chest || '',
     p.equipped_legs || '', p.equipped_boots || '', p.equipped_ring1 || '', p.equipped_ring2 || '',
-    p.equipped_weapon2 || '', p.direction, p.quadrant || 'E5', p.charId
+    p.equipped_weapon2 || '', p.direction, p.quadrant || 'F5', p.charId
   );
 }
 
@@ -1454,7 +1909,7 @@ function sendFullState(p) {
     equipped_ring1: p.equipped_ring1 || '', equipped_ring2: p.equipped_ring2 || '',
     equipped_weapon2: p.equipped_weapon2 || '',
     direction: p.direction, isAdmin: p.isAdmin,
-    quadrant: p.quadrant || 'E5'
+    quadrant: p.quadrant || 'F5'
   });
   // Send inventory
   const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
@@ -1523,12 +1978,7 @@ io.on('connection', (socket) => {
     players[socket.id] = p;
     // Send map & NPCs for current quadrant
     const qDef = QUADRANTS[playerQuadrant];
-    socket.emit('mapData', {
-      map: gameMaps[playerQuadrant], width: MAP_W, height: MAP_H, tileTypes: T,
-      quadrant: playerQuadrant, quadrantName: qDef.name, neighbors: qDef.neighbors,
-      buildings: gameBuildings[playerQuadrant] || [],
-      objects: gameMapObjects[playerQuadrant] || []
-    });
+    socket.emit('mapData', buildMapData(playerQuadrant));
     socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === playerQuadrant));
     sendFullState(p);
     io.emit('chat', { sender: 'Sistema', message: `${p.username} entrou no jogo.`, color: '#8f8' });
@@ -1548,6 +1998,22 @@ io.on('connection', (socket) => {
     }
     p.direction = direction;
     p.moving = moving;
+
+    // Portal detection
+    const px = Math.floor(p.x), py = Math.floor(p.y);
+    const portal = PORTALS.find(pt => pt.fromQ === p.quadrant && pt.x === px && pt.y === py);
+    if (portal && QUADRANTS[portal.toQ]) {
+      p.quadrant = portal.toQ;
+      const safe = findSafePosition(portal.toX, portal.toY, portal.toQ);
+      p.x = safe.x;
+      p.y = safe.y;
+      socket.emit('mapData', buildMapData(portal.toQ));
+      socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === portal.toQ));
+      sendFullState(p);
+      saveCharacter(p);
+      const toName = QUADRANTS[portal.toQ].name;
+      socket.emit('chat', { sender: 'Sistema', message: `Entrou em ${toName} [${portal.toQ}]`, color: '#aaddff' });
+    }
   });
 
   // Quadrant transition
@@ -1559,36 +2025,19 @@ io.on('connection', (socket) => {
     const newQuadrant = qDef.neighbors[direction];
     if (!newQuadrant || !QUADRANTS[newQuadrant]) return;
     const newQDef = QUADRANTS[newQuadrant];
+    const { w: nqW, h: nqH } = getMapSize(newQuadrant);
     // Reposition player on the opposite edge, preserving the other axis
-    if (direction === 'left') { p.x = MAP_W - 4; /* keep p.y */ }
+    if (direction === 'left') { p.x = nqW - 4; /* keep p.y */ }
     else if (direction === 'right') { p.x = 4; /* keep p.y */ }
-    else if (direction === 'up') { p.y = MAP_H - 4; /* keep p.x */ }
+    else if (direction === 'up') { p.y = nqH - 4; /* keep p.x */ }
     else if (direction === 'down') { p.y = 4; /* keep p.x */ }
     // Ensure player lands on a non-blocked tile
-    if (!canMoveTo(p.x, p.y, newQuadrant)) {
-      // Try nearby positions
-      let found = false;
-      for (let r = 1; r <= 10 && !found; r++) {
-        for (let dy = -r; dy <= r && !found; dy++) {
-          for (let dx = -r; dx <= r && !found; dx++) {
-            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-            const tx = p.x + dx, ty = p.y + dy;
-            if (tx >= 1 && tx < MAP_W - 1 && ty >= 1 && ty < MAP_H - 1 && canMoveTo(tx, ty, newQuadrant)) {
-              p.x = tx; p.y = ty; found = true;
-            }
-          }
-        }
-      }
-      if (!found) { p.x = newQDef.spawnX; p.y = newQDef.spawnY; }
-    }
+    const safe = findSafePosition(p.x, p.y, newQuadrant);
+    p.x = safe.x;
+    p.y = safe.y;
     p.quadrant = newQuadrant;
     // Send new map & NPCs
-    socket.emit('mapData', {
-      map: gameMaps[newQuadrant], width: MAP_W, height: MAP_H, tileTypes: T,
-      quadrant: newQuadrant, quadrantName: newQDef.name, neighbors: newQDef.neighbors,
-      buildings: gameBuildings[newQuadrant] || [],
-      objects: gameMapObjects[newQuadrant] || []
-    });
+    socket.emit('mapData', buildMapData(newQuadrant));
     socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === newQuadrant));
     sendFullState(p);
     saveCharacter(p);
@@ -1620,7 +2069,11 @@ io.on('connection', (socket) => {
       enemy.deathTime = now;
       // Loot
       let loot = [];
-      if (enemy.type !== 'cow') {
+      if (enemy.type === 'zombie') {
+        const silverDrop = 3 + Math.floor(Math.random() * 5); // 3-7
+        p.silver += silverDrop;
+        loot.push(`${silverDrop} Pratas`);
+      } else if (enemy.type !== 'cow') {
         p.silver += 1;
         loot.push('1 Prata');
       }
@@ -1629,21 +2082,21 @@ io.on('connection', (socket) => {
       if (enemy.type === 'skeleton' && Math.random() < dropChance) {
         spawnGroundItem('espada_enferrujada', 1, enemy.x + (Math.random() - 0.5) * 0.5, enemy.y + (Math.random() - 0.5) * 0.5, p.quadrant);
         loot.push('Espada Enferrujada');
-        socket.emit('chat', { sender: 'Sistema', message: '⚔️ Uma Espada Enferrujada caiu no chão!', color: '#ff0' });
+        socket.emit('chat', { sender: 'Sistema', message: 'âš”ï¸ Uma Espada Enferrujada caiu no chão!', color: '#ff0' });
       }
-      // Cow drops couro simples (0, 1, or 2)
+      // Cow drops couro cru (0, 1, or 2)
       if (enemy.type === 'cow') {
         const couroQty = Math.floor(Math.random() * 3); // 0, 1, or 2
         if (couroQty > 0) {
           for (let ci = 0; ci < couroQty; ci++) {
-            spawnGroundItem('couro_simples', 1, enemy.x + (Math.random() - 0.5) * 0.8, enemy.y + (Math.random() - 0.5) * 0.8, p.quadrant);
+            spawnGroundItem('couro_cru', 1, enemy.x + (Math.random() - 0.5) * 0.8, enemy.y + (Math.random() - 0.5) * 0.8, p.quadrant);
           }
-          loot.push(`${couroQty}x Couro Simples`);
-          socket.emit('chat', { sender: 'Sistema', message: `🐄 ${couroQty}x Couro Simples caiu no chão!`, color: '#c8a060' });
+          loot.push(`${couroQty}x Couro Cru`);
+          socket.emit('chat', { sender: 'Sistema', message: `ðŸ„ ${couroQty}x Couro Cru caiu no chão!`, color: '#c8a060' });
         }
       }
       // XP
-      const xpGain = enemy.type === 'skeleton' ? 15 : (enemy.type === 'cow' ? 5 : 5);
+      const xpGain = enemy.type === 'skeleton' ? 15 : (enemy.type === 'zombie' ? 12 : (enemy.type === 'cow' ? 5 : 5));
       grantXP(p, xpGain);
       socket.emit('loot', { enemyId: targetId, loot, silver: p.silver, xpGain, x: enemy.x, y: enemy.y });
       // Quest progress
@@ -1858,7 +2311,7 @@ io.on('connection', (socket) => {
     const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
     socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
     sendFullState(p);
-    socket.emit('chat', { sender: 'Sistema', message: `🛠️ Criou: ${recipe.name}!`, color: '#0f0' });
+    socket.emit('chat', { sender: 'Sistema', message: `ðŸ› ï¸ Criou: ${recipe.name}!`, color: '#0f0' });
   });
 
   socket.on('useItem', ({ itemId }) => {
@@ -1937,6 +2390,38 @@ io.on('connection', (socket) => {
     const p = players[socket.id];
     if (!p || !message || message.trim().length === 0) return;
     const msg = message.trim().substring(0, 200);
+
+    // ---- COMANDOS DE CHAT ----
+    // /tp X Y - teleporta para a posição
+    const tpMatch = msg.match(/^\/tp\s+(\d+)\s+(\d+)$/i);
+    if (tpMatch) {
+      const tx = +tpMatch[1], ty = +tpMatch[2];
+      if (tx >= 0 && tx < MAP_W && ty >= 0 && ty < MAP_H) {
+        p.x = tx; p.y = ty;
+        socket.emit('charData', { x: p.x, y: p.y });
+        socket.emit('chat', { sender: 'Sistema', message: `Teleportado para (${tx}, ${ty})`, color: '#8ff' });
+      } else {
+        socket.emit('chat', { sender: 'Sistema', message: `Posição inválida. Use /tp 0-${MAP_W-1} 0-${MAP_H-1}`, color: '#f88' });
+      }
+      return;
+    }
+    // /tpq QUADRANT X Y - teleporta para outro quadrante
+    const tpqMatch = msg.match(/^\/tpq\s+(\w+)\s+(\d+)\s+(\d+)$/i);
+    if (tpqMatch) {
+      const q = tpqMatch[1].toUpperCase(), tx = +tpqMatch[2], ty = +tpqMatch[3];
+      if (!QUADRANTS[q]) {
+        socket.emit('chat', { sender: 'Sistema', message: `Quadrante ${q} não existe. Disponíveis: ${Object.keys(QUADRANTS).join(', ')}`, color: '#f88' });
+        return;
+      }
+      p.x = tx; p.y = ty; p.quadrant = q;
+      const qDef = QUADRANTS[q];
+      socket.emit('mapData', buildMapData(q));
+      socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === q));
+      socket.emit('charData', { x: p.x, y: p.y, quadrant: q });
+      socket.emit('chat', { sender: 'Sistema', message: `Teleportado para ${qDef.name} (${tx}, ${ty})`, color: '#8ff' });
+      return;
+    }
+
     // Guardar mensagem para balão de fala (5 segundos)
     p.chatBubble = { message: msg, time: Date.now() };
     io.emit('chat', { sender: p.username, message: msg, color: '#fff' });
@@ -1963,7 +2448,7 @@ function addItemToInventory(charId, itemId, qty) {
       db.prepare('INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, 1)').run(charId, itemId);
     }
   } else if (item && item.stackMax) {
-    // Itens com stack máximo (ex: couro_simples max 10)
+    // Itens com stack máximo (ex: couro_cru max 10)
     let remaining = qty;
     // Tentar preencher stacks existentes primeiro
     const existingRows = db.prepare('SELECT * FROM inventory WHERE character_id = ? AND item_id = ? ORDER BY id ASC').all(charId, itemId);
@@ -2092,17 +2577,11 @@ setInterval(() => {
               nearest.silver = Math.floor(nearest.silver * 0.9);
               nearest.lastCombatTime = 0;
               nearest.targetId = null;
-              // Respawn in E5 if in another quadrant
-              if (nearest.quadrant !== 'E5') {
-                nearest.quadrant = 'E5';
-                const qDef = QUADRANTS['E5'];
-                nearest.socket.emit('mapData', {
-                  map: gameMaps['E5'], width: MAP_W, height: MAP_H, tileTypes: T,
-                  quadrant: 'E5', quadrantName: qDef.name, neighbors: qDef.neighbors,
-                  buildings: gameBuildings['E5'] || [],
-                  objects: gameMapObjects['E5'] || []
-                });
-                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'E5'));
+              // Respawn in F5 (Cidade) if in another quadrant
+              if (nearest.quadrant !== 'F5') {
+                nearest.quadrant = 'F5';
+                nearest.socket.emit('mapData', buildMapData('F5'));
+                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'F5'));
               }
               nearest.socket.emit('death', { silver: nearest.silver });
               sendFullState(nearest);
@@ -2118,6 +2597,53 @@ setInterval(() => {
           const wy = enemy.y + (Math.random() - 0.5) * 2;
           const dSpawn = Math.sqrt((wx - enemy.spawnX)**2 + (wy - enemy.spawnY)**2);
           if (dSpawn < 5 && canMoveTo(wx, wy, enemy.quadrant)) { enemy.x = wx; enemy.y = wy; }
+        }
+      }
+    } else if (enemy.type === 'zombie') {
+      // Zombie: slower than skeleton, chases and attacks
+      if (nearest && nearDist < 6) {
+        // Chase
+        if (nearDist > 1.2) {
+          const dx = nearest.x - enemy.x, dy = nearest.y - enemy.y;
+          const step = 0.03; // slower than skeleton
+          const nx = enemy.x + (dx / nearDist) * step;
+          const ny = enemy.y + (dy / nearDist) * step;
+          if (canMoveTo(nx, ny, enemy.quadrant)) { enemy.x = nx; enemy.y = ny; enemy.moving = true; }
+        }
+        // Attack
+        if (nearDist < 1.5 && now - enemy.lastAttack > 2500) {
+          enemy.lastAttack = now;
+          const totalDef = nearest.defense + getPlayerDefenseBonus(nearest);
+          const dmg = Math.max(0, enemy.damage - totalDef);
+          if (dmg > 0) {
+            nearest.hp -= dmg;
+            nearest.lastCombatTime = now;
+            nearest.socket.emit('damageTaken', { from: enemy.id, damage: dmg, hp: nearest.hp });
+            if (nearest.hp <= 0) {
+              nearest.hp = nearest.max_hp;
+              nearest.x = 40; nearest.y = 30;
+              nearest.silver = Math.floor(nearest.silver * 0.9);
+              nearest.lastCombatTime = 0;
+              nearest.targetId = null;
+              if (nearest.quadrant !== 'F5') {
+                nearest.quadrant = 'F5';
+                nearest.socket.emit('mapData', buildMapData('F5'));
+                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'F5'));
+              }
+              nearest.socket.emit('death', { silver: nearest.silver });
+              sendFullState(nearest);
+              io.emit('chat', { sender: 'Sistema', message: `${nearest.username} foi derrotado!`, color: '#f44' });
+            }
+          }
+        }
+      } else {
+        // Wander slowly
+        if (now - enemy.lastWander > 4000) {
+          enemy.lastWander = now;
+          const wx = enemy.x + (Math.random() - 0.5) * 1.5;
+          const wy = enemy.y + (Math.random() - 0.5) * 1.5;
+          const dSpawn = Math.sqrt((wx - enemy.spawnX)**2 + (wy - enemy.spawnY)**2);
+          if (dSpawn < 4 && canMoveTo(wx, wy, enemy.quadrant)) { enemy.x = wx; enemy.y = wy; }
         }
       }
     } else if (enemy.type === 'slime') {
@@ -2202,6 +2728,9 @@ setInterval(() => {
           hp: op.hp, max_hp: op.max_hp, level: op.level,
           equipped_weapon: op.equipped_weapon,
           equipped_chest: op.equipped_chest || '',
+          equipped_helmet: op.equipped_helmet || '',
+          equipped_legs: op.equipped_legs || '',
+          equipped_boots: op.equipped_boots || '',
           isAdmin: op.isAdmin
         };
         // Incluir balão de fala se ainda estiver ativo (5 segundos)

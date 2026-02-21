@@ -20,20 +20,20 @@ socket.on('disconnect', (reason) => {
 });
 
 socket.on('reconnect', (attempt) => {
-  console.log('Reconectado apÃ³s', attempt, 'tentativas');
-  // Re-login automÃ¡tico se jÃ¡ estava logado
+  console.log('Reconectado após', attempt, 'tentativas');
+  // Re-login automático se já estava logado
   if (myChar && myChar.username && lastLoginCredentials) {
-    console.log('Tentando re-login automÃ¡tico...');
+    console.log('Tentando re-login automático...');
     socket.emit('login', lastLoginCredentials, (res) => {
       if (res.success) {
-        console.log('Re-login automÃ¡tico bem sucedido!');
+        console.log('Re-login automático bem sucedido!');
       } else {
         console.log('Re-login falhou:', res.error);
-        // Se falhou por conta jÃ¡ conectada, forÃ§ar refresh
-        if (res.error && res.error.includes('jÃ¡ estÃ¡ conectada')) {
+        // Se falhou por conta já conectada, forçar refresh
+        if (res.error && res.error.includes('já está conectada')) {
           setTimeout(() => {
             socket.emit('login', lastLoginCredentials, (res2) => {
-              if (res2.success) console.log('Re-login automÃ¡tico bem sucedido (2a tentativa)');
+              if (res2.success) console.log('Re-login automático bem sucedido (2a tentativa)');
             });
           }, 2000);
         }
@@ -43,7 +43,7 @@ socket.on('reconnect', (attempt) => {
 });
 
 socket.on('reconnect_attempt', (attempt) => {
-  console.log('Tentativa de reconexÃ£o:', attempt);
+  console.log('Tentativa de reconexão:', attempt);
 });
 
 // ============= CONSTANTS =============
@@ -51,22 +51,27 @@ let TILE_SIZE = 32;
 const TILE_SIZE_MIN = 16;
 const TILE_SIZE_MAX = 64;
 const MOVE_SPEED = 0.08; // tiles per frame
+let userZoom = null; // null = auto, number = user-defined TILE_SIZE via scroll
 
 // Tile type enum (must match server)
-const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE:5, WOOD_FLOOR:6, CHURCH_FLOOR:7, WOOD_WALL:8, SAND:9,
+const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE_CARVALHO:5, WOOD_FLOOR:6, CHURCH_FLOOR:7, WOOD_WALL:8, SAND:9,
   FLOWERS:10, BUSH:11, ROCK:12, RED_CARPET:13, ALTAR:14, ANVIL:15, FURNACE:16, BOOKSHELF:17, TABLE:18, CHAIR:19,
   WELL:20, FENCE:21, ROOF_STONE:22, ROOF_WOOD:23, WINDOW_STONE:24, WINDOW_WOOD:25, CROSS:26, TALL_GRASS:27, MUSHROOM:28,
   BARREL:29, CRATE:30, TORCH_WALL:31, BED:32, RUG:33, CHURCH_PEW:34, DARK_GRASS:35,
   GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41,
-  ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45 };
-const BLOCKED = new Set([T.STONE_WALL, T.WATER, T.TREE, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
-  T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL]);
+  ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45,
+  TREE_BETULA:46, TREE_CARVALHO_SMALL:47, TREE_MAGICA:48, TREE_MANGUE:49, TREE_PINHEIRO:50, TREE_PINOS:51,
+  WATER_RIVER:52 };
+const BLOCKED = new Set([T.STONE_WALL, T.WATER, T.WATER_RIVER, T.TREE_CARVALHO, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
+  T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL,
+  T.TREE_BETULA, T.TREE_CARVALHO_SMALL, T.TREE_MAGICA, T.TREE_MANGUE, T.TREE_PINHEIRO, T.TREE_PINOS]);
 
 // ============= STATE =============
 let gameMap = null;
 let mapWidth = 0, mapHeight = 0;
 let myChar = null;
 let otherPlayers = {};
+let otherPlayersCache = {}; // interpolation: { id: { x, y, targetX, targetY, animFrame, animTimer } }
 let nearbyEnemies = [];
 let npcs = [];
 let myInventory = [];
@@ -76,9 +81,9 @@ let myChatBubble = null; // { message, time }
 let currentDialog = null;
 let targetEnemy = null;
 let lastAttackTime = 0;
-let groundItems = []; // itens no chÃ£o
+let groundItems = []; // itens no chão
 let npcQuestStatus = {}; // quest status per NPC
-let lastLoginCredentials = null; // para re-login automÃ¡tico
+let lastLoginCredentials = null; // para re-login automático
 
 // Quadrant system
 let currentQuadrant = 'E5';
@@ -88,6 +93,9 @@ let transitioning = false;
 
 // Image objects on the map (solid blocks with images)
 let mapObjects = [];
+let mapPortals = [];
+let solidCellSet = new Set(); // per-cell solid grid from editor
+let behindCellSet = new Set(); // per-cell "behind" grid (player passes behind objects here)
 const mapObjectImages = {}; // cache: id -> Image element
 
 function loadMapObjectImages() {
@@ -105,7 +113,22 @@ function loadMapObjectImages() {
   }
 }
 
+// Draw the portions of objects that are NOT in behindCells (rendered BEFORE entities)
 function drawMapObjects() {
+  if (behindCellSet.size === 0) {
+    // No behind cells at all — draw everything as before
+    for (const obj of mapObjects) {
+      const img = mapObjectImages[obj.id];
+      if (!img || !img.complete || !img.naturalWidth) continue;
+      const sx = obj.x * TILE_SIZE - cameraX;
+      const sy = obj.y * TILE_SIZE - cameraY;
+      const sw = obj.width * TILE_SIZE;
+      const sh = obj.height * TILE_SIZE;
+      ctx.drawImage(img, sx, sy, sw, sh);
+    }
+    return;
+  }
+
   for (const obj of mapObjects) {
     const img = mapObjectImages[obj.id];
     if (!img || !img.complete || !img.naturalWidth) continue;
@@ -113,16 +136,79 @@ function drawMapObjects() {
     const sy = obj.y * TILE_SIZE - cameraY;
     const sw = obj.width * TILE_SIZE;
     const sh = obj.height * TILE_SIZE;
-    ctx.drawImage(img, sx, sy, sw, sh);
+
+    // Check if this object overlaps any behind cells
+    let hasBehind = false;
+    for (let ty = obj.y; ty < obj.y + obj.height; ty++) {
+      for (let tx = obj.x; tx < obj.x + obj.width; tx++) {
+        if (behindCellSet.has(`${tx},${ty}`)) { hasBehind = true; break; }
+      }
+      if (hasBehind) break;
+    }
+
+    if (!hasBehind) {
+      // No behind cells overlap — draw entire object normally
+      ctx.drawImage(img, sx, sy, sw, sh);
+    } else {
+      // Clip to tiles that are NOT behind cells
+      ctx.save();
+      ctx.beginPath();
+      for (let ty = obj.y; ty < obj.y + obj.height; ty++) {
+        for (let tx = obj.x; tx < obj.x + obj.width; tx++) {
+          if (!behindCellSet.has(`${tx},${ty}`)) {
+            ctx.rect(tx * TILE_SIZE - cameraX, ty * TILE_SIZE - cameraY, TILE_SIZE, TILE_SIZE);
+          }
+        }
+      }
+      ctx.clip();
+      ctx.drawImage(img, sx, sy, sw, sh);
+      ctx.restore();
+    }
+  }
+}
+
+// Draw the portions of objects that ARE in behindCells (rendered AFTER entities so they appear in front)
+function drawMapObjectsBehind() {
+  if (behindCellSet.size === 0) return;
+
+  for (const obj of mapObjects) {
+    const img = mapObjectImages[obj.id];
+    if (!img || !img.complete || !img.naturalWidth) continue;
+    const sx = obj.x * TILE_SIZE - cameraX;
+    const sy = obj.y * TILE_SIZE - cameraY;
+    const sw = obj.width * TILE_SIZE;
+    const sh = obj.height * TILE_SIZE;
+
+    // Collect behind tiles that overlap this object
+    ctx.save();
+    ctx.beginPath();
+    let anyBehind = false;
+    for (let ty = obj.y; ty < obj.y + obj.height; ty++) {
+      for (let tx = obj.x; tx < obj.x + obj.width; tx++) {
+        if (behindCellSet.has(`${tx},${ty}`)) {
+          ctx.rect(tx * TILE_SIZE - cameraX, ty * TILE_SIZE - cameraY, TILE_SIZE, TILE_SIZE);
+          anyBehind = true;
+        }
+      }
+    }
+    if (anyBehind) {
+      ctx.clip();
+      ctx.drawImage(img, sx, sy, sw, sh);
+    }
+    ctx.restore();
   }
 }
 
 // Item data map (client-side)
 const ITEMS_CLIENT = {
   espada_enferrujada: { name: 'Espada Enferrujada', icon: '/assets/icons/swords/enferrujada.png' },
-  pocao_cura: { name: 'PoÃ§Ã£o de Cura', icon: null },
-  couro_simples: { name: 'Couro Simples', icon: '/assets/sprites/cow/courosimples.png' },
-  tunica_couro_simples: { name: 'TÃºnica de Couro Simples', icon: '/assets/icons/peitorais/tunicacourosimples.png' }
+  pocao_cura: { name: 'Poção de Cura', icon: null },
+  couro_cru: { name: 'Couro Cru', icon: '/assets/sprites/cow/courocru.png' },
+  couro_trabalhado: { name: 'Couro Trabalhado', icon: '/assets/sprites/cow/courotrabalhado.png' },
+  tunica_couro_simples: { name: 'Túnica de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/tunicacourosimples.png' },
+  chapeu_couro_simples: { name: 'Chapéu de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/chapeucourosimples.png' },
+  bota_couro_simples: { name: 'Bota de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/botacourosimples.png' },
+  calca_couro_simples: { name: 'Calça de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/calcacourosimples.png' }
 };
 
 // Input
@@ -164,8 +250,16 @@ const spriteNames = [
   ['vacaparada', '/assets/sprites/cow/vacaparada.png'],
   ['vacaandando', '/assets/sprites/cow/vacaandando.png'],
   ['vacacomendo', '/assets/sprites/cow/vacacomendo.png'],
-  ['tunicasimplesparado', '/assets/sprites/player/itens/tunicasimplesparado.png'],
-  ['tunicasimplesandando', '/assets/sprites/player/itens/tunicasimplesandando.png'],
+  ['tunicasimplesparado', '/assets/sprites/player/itens/Couro simples/tunicasimplesparado.png'],
+  ['tunicasimplesandando', '/assets/sprites/player/itens/Couro simples/tunicasimplesandando.png'],
+  ['chapeuparado', '/assets/sprites/player/itens/Couro simples/chapeuparado.png'],
+  ['chapeuandando', '/assets/sprites/player/itens/Couro simples/chapeuandando.png'],
+  ['botaparado', '/assets/sprites/player/itens/Couro simples/botaparado.png'],
+  ['botaandando', '/assets/sprites/player/itens/Couro simples/botaandando.png'],
+  ['calcaparado', '/assets/sprites/player/itens/Couro simples/calcaparado.png'],
+  ['calcaandando', '/assets/sprites/player/itens/Couro simples/calcaandando.png'],
+  ['zumbiparado', '/assets/sprites/zumbi/zumbiparado.png'],
+  ['zumbiandando', '/assets/sprites/zumbi/zumbiandando.png'],
 ];
 
 // Mapa de item_id -> sprite names [parado, andando]
@@ -178,6 +272,21 @@ const CHEST_SPRITES = {
   tunica_couro_simples: ['tunicasimplesparado', 'tunicasimplesandando'],
 };
 
+// Mapa de item_id -> sprite names [parado, andando] para elmos
+const HELMET_SPRITES = {
+  chapeu_couro_simples: ['chapeuparado', 'chapeuandando'],
+};
+
+// Mapa de item_id -> sprite names [parado, andando] para botas
+const BOOTS_SPRITES = {
+  bota_couro_simples: ['botaparado', 'botaandando'],
+};
+
+// Mapa de item_id -> sprite names [parado, andando] para calças
+const LEGS_SPRITES = {
+  calca_couro_simples: ['calcaparado', 'calcaandando'],
+};
+
 let spritesLoaded = 0;
 for (const [name, src] of spriteNames) {
   const img = new Image();
@@ -185,6 +294,72 @@ for (const [name, src] of spriteNames) {
   img.onerror = () => { console.warn('Sprite not found:', src); spritesLoaded++; };
   img.src = src;
   sprites[name] = img;
+}
+
+// ============= TREE SPRITE LOADING =============
+// Map tile type -> array of Image objects for that tree family
+const TREE_SPRITES = {};
+const TREE_SPRITE_DEFS = {
+  [T.TREE_CARVALHO]: [
+    '/assets/sprites/trees/carvalho/arvore1.png',
+    '/assets/sprites/trees/carvalho/arvore2.png',
+    '/assets/sprites/trees/carvalho/arvore3.png',
+    '/assets/sprites/trees/carvalho/arvore4.png',
+    '/assets/sprites/trees/carvalho/arvore5.png',
+    '/assets/sprites/trees/carvalho/arvore6.png',
+    '/assets/sprites/trees/carvalho/arvore7.png',
+  ],
+  [T.TREE_BETULA]: [
+    '/assets/sprites/trees/bétula/betula1.png',
+    '/assets/sprites/trees/bétula/betula2.png',
+    '/assets/sprites/trees/bétula/betula3.png',
+    '/assets/sprites/trees/bétula/betula4.png',
+    '/assets/sprites/trees/bétula/betula5.png',
+  ],
+  [T.TREE_CARVALHO_SMALL]: [
+    '/assets/sprites/trees/carvalho/pequena1.png',
+    '/assets/sprites/trees/carvalho/pequena2.png',
+  ],
+  [T.TREE_MAGICA]: [
+    '/assets/sprites/trees/magicas/arvoremagica1.png',
+    '/assets/sprites/trees/magicas/arvoremagica2.png',
+  ],
+  [T.TREE_MANGUE]: [
+    '/assets/sprites/trees/mangue/mangue1.png',
+    '/assets/sprites/trees/mangue/mangue2.png',
+  ],
+  [T.TREE_PINHEIRO]: [
+    '/assets/sprites/trees/pinheiro/pinheiro1.png',
+    '/assets/sprites/trees/pinheiro/pinheiro2.png',
+    '/assets/sprites/trees/pinheiro/pinheiro3.png',
+    '/assets/sprites/trees/pinheiro/pinheiro4.png',
+    '/assets/sprites/trees/pinheiro/pinheiro5.png',
+    '/assets/sprites/trees/pinheiro/pinheiro6.png',
+    '/assets/sprites/trees/pinheiro/pinheiro7.png',
+    '/assets/sprites/trees/pinheiro/pinheiro8.png',
+    '/assets/sprites/trees/pinheiro/pinheiro9.png',
+  ],
+  [T.TREE_PINOS]: [
+    '/assets/sprites/trees/pinos/pinos1.png',
+    '/assets/sprites/trees/pinos/pinos2.png',
+    '/assets/sprites/trees/pinos/pinos3.png',
+  ],
+};
+// All tree tile types for quick lookup
+const TREE_TILE_TYPES = new Set(Object.keys(TREE_SPRITE_DEFS).map(Number));
+
+let treeSpriteCount = 0;
+let treeSpriteTotal = 0;
+for (const [tileType, paths] of Object.entries(TREE_SPRITE_DEFS)) {
+  TREE_SPRITES[tileType] = [];
+  treeSpriteTotal += paths.length;
+  for (const src of paths) {
+    const img = new Image();
+    img.onload = () => { treeSpriteCount++; };
+    img.onerror = () => { console.warn('Tree sprite not found:', src); treeSpriteCount++; };
+    img.src = src;
+    TREE_SPRITES[tileType].push(img);
+  }
 }
 
 // (Auto-tiling removed — using simple procedural tile cache only)
@@ -224,7 +399,10 @@ function initTileCache() {
   if (tileCacheBuilt) return;
   tileCacheBuilt = true;
   const s = TILE_BASE;
-  for (let tileType = 0; tileType <= 41; tileType++) {
+  for (let tileType = 0; tileType <= 52; tileType++) {
+    // Skip tree sprite tiles and water tiles (animated separately)
+    if (TREE_TILE_TYPES.has(tileType)) continue;
+    if (tileType === T.WATER_RIVER) continue;
     for (let v = 0; v < TILE_VARIANTS; v++) {
       const key = tileType + '_' + v;
       const off = document.createElement('canvas');
@@ -242,6 +420,17 @@ function initTileCache() {
       off.width = s; off.height = s;
       const oc = off.getContext('2d');
       renderWaterTile(oc, v, f, s);
+      tileCanvasCache[key] = off;
+    }
+  }
+  // river water frames (lighter)
+  for (let f = 0; f < 3; f++) {
+    for (let v = 0; v < TILE_VARIANTS; v++) {
+      const key = 'river_' + f + '_' + v;
+      const off = document.createElement('canvas');
+      off.width = s; off.height = s;
+      const oc = off.getContext('2d');
+      renderRiverTile(oc, v, f, s);
       tileCanvasCache[key] = off;
     }
   }
@@ -281,6 +470,44 @@ function renderWaterTile(c, variant, frame, s) {
   for (let i = 0; i < sparkles; i++) {
     const spx = Math.floor(rng() * s), spy = Math.floor(rng() * s);
     if ((spx + spy + frame) % 4 === 0) c.fillRect(spx, spy, 1, 1);
+  }
+}
+
+// River water — lighter, clearer variant
+function renderRiverTile(c, variant, frame, s) {
+  const rng = seededRand(variant * 137 + frame * 31 + 777);
+  // Lighter blue-green base
+  c.fillStyle = '#2a7ab8';
+  c.fillRect(0, 0, s, s);
+  // Depth variation patches (lighter shades)
+  const rShades = ['#2872ae','#3082c0','#2a7ab8','#2c80bc','#3488c4'];
+  const depthN = Math.floor(s * s / 80);
+  for (let i = 0; i < depthN; i++) {
+    c.fillStyle = rShades[Math.floor(rng() * rShades.length)];
+    c.fillRect(Math.floor(rng() * (s - 2)), Math.floor(rng() * (s - 2)),
+      1 + Math.floor(rng() * 2), 1 + Math.floor(rng() * 2));
+  }
+  // Primary wave lines (animated) — lighter
+  const wOff = frame * Math.floor(s / 3);
+  c.fillStyle = '#4a9ad0';
+  for (let px = 0; px < s; px++) {
+    const wy1 = Math.floor(s * 0.25 + Math.sin((px + wOff) * 0.28) * 2.5);
+    c.fillRect(px, wy1, 1, 1);
+    const wy2 = Math.floor(s * 0.65 + Math.sin((px + wOff + 8) * 0.24) * 2.5);
+    c.fillRect(px, wy2, 1, 1);
+  }
+  // Secondary subtle wave
+  c.fillStyle = '#3a8cc0';
+  for (let px = 0; px < s; px++) {
+    const wy3 = Math.floor(s * 0.45 + Math.sin((px + wOff + 4) * 0.32) * 2);
+    c.fillRect(px, wy3, 1, 1);
+  }
+  // Sparkle highlights — more visible on river
+  c.fillStyle = '#7ac0e8';
+  const sparkles = Math.max(3, Math.floor(s / 8));
+  for (let i = 0; i < sparkles; i++) {
+    const spx = Math.floor(rng() * s), spy = Math.floor(rng() * s);
+    if ((spx + spy + frame) % 3 === 0) c.fillRect(spx, spy, 1, 1);
   }
 }
 
@@ -738,8 +965,8 @@ function renderDetailedTile(c, tileType, variant, s) {
       break;
     }
 
-    // ===== TREE =====
-    case T.TREE: {
+    // ===== TREE CARVALHO =====
+    case T.TREE_CARVALHO: {
       // Grass background
       c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
@@ -1644,9 +1871,19 @@ socket.on('mapData', (data) => {
   if (data.quadrant) currentQuadrant = data.quadrant;
   if (data.quadrantName) currentQuadrantName = data.quadrantName;
   if (data.neighbors) quadrantNeighbors = data.neighbors;
+  // Portals
+  mapPortals = data.portals || [];
   // Load image objects
   mapObjects = data.objects || [];
   loadMapObjectImages();
+  // Load per-cell solid grid
+  solidCellSet = new Set(data.solidCells || []);
+  // Load per-cell behind grid
+  behindCellSet = new Set(data.behindCells || []);
+  // Reset user zoom on map change so auto-scale works for small maps
+  userZoom = null;
+  // Clear other players interpolation cache on map change
+  otherPlayersCache = {};
   transitioning = false;
 });
 
@@ -1660,7 +1897,27 @@ socket.on('charData', (data) => {
 });
 
 socket.on('gameState', (data) => {
-  otherPlayers = data.players;
+  // Update other players with interpolation targets
+  const newPlayers = data.players || {};
+  for (const [id, op] of Object.entries(newPlayers)) {
+    if (!otherPlayersCache[id]) {
+      // First time seeing this player — snap to position
+      otherPlayersCache[id] = {
+        x: op.x, y: op.y,
+        targetX: op.x, targetY: op.y,
+        animFrame: 0, animTimer: 0
+      };
+    } else {
+      // Set interpolation target
+      otherPlayersCache[id].targetX = op.x;
+      otherPlayersCache[id].targetY = op.y;
+    }
+  }
+  // Remove players that are no longer nearby
+  for (const id of Object.keys(otherPlayersCache)) {
+    if (!newPlayers[id]) delete otherPlayersCache[id];
+  }
+  otherPlayers = newPlayers;
   nearbyEnemies = data.enemies;
   groundItems = data.groundItems || [];
   npcQuestStatus = data.npcQuestStatus || {};
@@ -1791,12 +2048,13 @@ document.addEventListener('keyup', (e) => {
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  const current = userZoom !== null ? userZoom : TILE_SIZE;
   if (e.deltaY < 0) {
-    TILE_SIZE = Math.min(TILE_SIZE_MAX, TILE_SIZE + 4);
+    userZoom = Math.min(TILE_SIZE_MAX, current + 4);
   } else {
-    TILE_SIZE = Math.max(TILE_SIZE_MIN, TILE_SIZE - 4);
+    userZoom = Math.max(TILE_SIZE_MIN, current - 4);
   }
-  // Cache is fixed at TILE_BASE, drawImage scales automatically
+  TILE_SIZE = userZoom;
 }, { passive: false });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -1926,13 +2184,23 @@ function isBlocked(tx, ty) {
   if (tx >= mapWidth) return !(quadrantNeighbors && quadrantNeighbors.right);
   if (ty < 0) return !(quadrantNeighbors && quadrantNeighbors.up);
   if (ty >= mapHeight) return !(quadrantNeighbors && quadrantNeighbors.down);
-  return BLOCKED.has(gameMap[Math.floor(ty)][Math.floor(tx)]);
+  const fx = Math.floor(tx), fy = Math.floor(ty);
+  if (fy >= gameMap.length || fx >= (gameMap[0] || []).length) return true;
+  if (BLOCKED.has(gameMap[fy][fx])) return true;
+  // Tree tiles also block the tile above them (because trees are 2 tiles tall visually)
+  if (fy + 1 < mapHeight && fy + 1 < gameMap.length && TREE_TILE_TYPES.has(gameMap[fy + 1][fx])) return true;
+  // Check per-cell solid grid (from editor collision tool)
+  if (solidCellSet.has(`${fx},${fy}`)) return true;
+  return false;
 }
 
 function canMoveTo(x, y) {
-  const pad = 0.2;
-  return !isBlocked(x - pad, y - pad) && !isBlocked(x + pad, y - pad)
-    && !isBlocked(x - pad, y + pad) && !isBlocked(x + pad, y + pad);
+  // Hitbox ~0.6 tile centrada no personagem
+  const pad = 0.3;
+  const left = x - pad, right = x + pad;
+  const top = y - pad, bottom = y + pad;
+  return !isBlocked(left, top) && !isBlocked(right, top)
+    && !isBlocked(left, bottom) && !isBlocked(right, bottom);
 }
 
 // ============= GAME LOOP =============
@@ -1971,7 +2239,7 @@ function update(dt) {
     else if (keys.up) myChar.direction = 'up';
     else if (keys.down) myChar.direction = 'down';
 
-    // Try move X
+    // Try move X then Y separately (wall sliding)
     let nx = myChar.x + dx;
     let ny = myChar.y + dy;
     if (canMoveTo(nx, myChar.y)) myChar.x = nx;
@@ -2013,6 +2281,26 @@ function update(dt) {
     animFrame = 0; animTimer = 0;
   }
 
+  // Other players interpolation & animation
+  for (const [id, op] of Object.entries(otherPlayers)) {
+    const cache = otherPlayersCache[id];
+    if (!cache) continue;
+    // Smooth interpolation towards target position
+    const lerpSpeed = 0.25;
+    cache.x += (cache.targetX - cache.x) * lerpSpeed;
+    cache.y += (cache.targetY - cache.y) * lerpSpeed;
+    // Snap if very close
+    if (Math.abs(cache.targetX - cache.x) < 0.01) cache.x = cache.targetX;
+    if (Math.abs(cache.targetY - cache.y) < 0.01) cache.y = cache.targetY;
+    // Independent animation timer per player
+    if (op.moving) {
+      cache.animTimer += dt;
+      if (cache.animTimer > 200) { cache.animTimer = 0; cache.animFrame = (cache.animFrame + 1) % 2; }
+    } else {
+      cache.animFrame = 0; cache.animTimer = 0;
+    }
+  }
+
   // Enemy animation (faster cycle)
   enemyAnimTimer += dt;
   if (enemyAnimTimer > 150) { enemyAnimTimer = 0; enemyAnimFrame = (enemyAnimFrame + 1) % 2; }
@@ -2039,16 +2327,41 @@ function update(dt) {
     }
   }
 
-  // Camera
+  // Camera — auto-scale for small maps (only if user hasn't zoomed manually)
+  if (userZoom !== null) {
+    TILE_SIZE = userZoom;
+  } else {
+    const baseMapW = mapWidth * 32, baseMapH = mapHeight * 32;
+    if (baseMapW < canvas.width || baseMapH < canvas.height) {
+      const scaleX = canvas.width / (mapWidth * 32);
+      const scaleY = canvas.height / (mapHeight * 32);
+      TILE_SIZE = Math.floor(Math.min(scaleX, scaleY) * 32 * 0.9);
+    } else {
+      TILE_SIZE = 32;
+    }
+  }
+
   cameraX = myChar.x * TILE_SIZE - canvas.width / 2;
   cameraY = myChar.y * TILE_SIZE - canvas.height / 2;
-  cameraX = Math.max(0, Math.min(cameraX, mapWidth * TILE_SIZE - canvas.width));
-  cameraY = Math.max(0, Math.min(cameraY, mapHeight * TILE_SIZE - canvas.height));
+  const totalMapW = mapWidth * TILE_SIZE;
+  const totalMapH = mapHeight * TILE_SIZE;
+  if (totalMapW <= canvas.width) {
+    cameraX = -(canvas.width - totalMapW) / 2;
+  } else {
+    cameraX = Math.max(0, Math.min(cameraX, totalMapW - canvas.width));
+  }
+  if (totalMapH <= canvas.height) {
+    cameraY = -(canvas.height - totalMapH) / 2;
+  } else {
+    cameraY = Math.max(0, Math.min(cameraY, totalMapH - canvas.height));
+  }
 }
 
 // ============= RENDERING =============
 function render() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Dark background (visible around small maps)
+  ctx.fillStyle = '#0e0e1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!gameMap) return;
 
@@ -2067,11 +2380,44 @@ function render() {
     }
   }
 
-  // Draw image objects on top of tiles
+  // Draw portal indicators (animated glow)
+  if (mapPortals && mapPortals.length > 0) {
+    const portalPulse = 0.4 + 0.3 * Math.sin(Date.now() / 400);
+    for (const portal of mapPortals) {
+      const px = portal.x * TILE_SIZE - cameraX;
+      const py = portal.y * TILE_SIZE - cameraY;
+      if (px < -TILE_SIZE || px > canvas.width || py < -TILE_SIZE || py > canvas.height) continue;
+      ctx.save();
+      ctx.globalAlpha = portalPulse;
+      const grad = ctx.createRadialGradient(px + TILE_SIZE/2, py + TILE_SIZE/2, 2, px + TILE_SIZE/2, py + TILE_SIZE/2, TILE_SIZE * 0.6);
+      grad.addColorStop(0, '#ffe066');
+      grad.addColorStop(0.5, '#ffaa00');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+
+  // Draw tree sprites in a separate pass (after all base tiles) so they don't get painted over
+  // Trees are NOT drawn here anymore — they are added to the entity list for proper Y-sorting
+  // (kept as comment for reference)
+
+  // Draw image objects on top of tiles (simple, no Y-sort)
   drawMapObjects();
 
-  // Collect all entities and sort by Y for proper layering
+  // Collect all entities AND trees, sort by Y for proper layering
   const entities = [];
+
+  // Add visible trees as entities so they Y-sort with characters
+  for (let ty = startTY; ty < endTY; ty++) {
+    for (let tx = startTX; tx < endTX; tx++) {
+      const tile = gameMap[ty][tx];
+      if (!TREE_TILE_TYPES.has(tile)) continue;
+      entities.push({ type: 'tree', tx, ty, y: ty + 0.9 }); // y at bottom of tile for sorting
+    }
+  }
 
   // NPCs
   for (const npc of npcs) {
@@ -2085,7 +2431,10 @@ function render() {
 
   // Other players
   for (const [id, op] of Object.entries(otherPlayers)) {
-    entities.push({ type: 'otherPlayer', data: op, y: op.y });
+    const cache = otherPlayersCache[id];
+    const drawY = cache ? cache.y : op.y;
+    op._cacheId = id;
+    entities.push({ type: 'otherPlayer', data: op, y: drawY });
   }
 
   // Ground items
@@ -2104,6 +2453,7 @@ function render() {
   // Draw entities
   for (const ent of entities) {
     switch (ent.type) {
+      case 'tree': drawTreeEntity(ent.tx, ent.ty); break;
       case 'npc': drawNPC(ent.data); break;
       case 'enemy': drawEnemy(ent.data); break;
       case 'otherPlayer': drawOtherPlayer(ent.data); break;
@@ -2111,6 +2461,9 @@ function render() {
       case 'groundItem': drawGroundItem(ent.data); break;
     }
   }
+
+  // Draw portions of image objects that are in "behind" cells (rendered over entities)
+  drawMapObjectsBehind();
 
   // Target indicator
   if (targetEnemy) {
@@ -2143,6 +2496,29 @@ function drawTile(tx, ty, sx, sy) {
     }
   }
 
+  // River water (animated, lighter)
+  if (tile === T.WATER_RIVER) {
+    const key = 'river_' + waterAnimFrame + '_' + v;
+    const cached = tileCanvasCache[key];
+    if (cached) {
+      ctx.drawImage(cached, 0, 0, cached.width, cached.height, sx, sy, TILE_SIZE, TILE_SIZE);
+      return;
+    }
+  }
+
+  // Tree sprite tiles — draw only grass background here; tree sprites are drawn via Y-sorted entities
+  if (TREE_TILE_TYPES.has(tile)) {
+    const grassKey = T.GRASS + '_' + v;
+    const grassCached = tileCanvasCache[grassKey];
+    if (grassCached) {
+      ctx.drawImage(grassCached, 0, 0, grassCached.width, grassCached.height, sx, sy, TILE_SIZE, TILE_SIZE);
+    } else {
+      ctx.fillStyle = '#3a7a2c';
+      ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    }
+    return;
+  }
+
   // All tiles from procedural cache
   const key = tile + '_' + v;
   const cached = tileCanvasCache[key];
@@ -2157,6 +2533,25 @@ function drawTile(tx, ty, sx, sy) {
 }
 
 // ============= ENTITY DRAWING =============
+
+function drawTreeEntity(tx, ty) {
+  const tile = gameMap[ty][tx];
+  const treeImgs = TREE_SPRITES[tile];
+  if (!treeImgs || treeImgs.length === 0) return;
+  const idx = (tx * 31 + ty * 17) % treeImgs.length;
+  const img = treeImgs[idx];
+  if (!img.complete || !img.naturalWidth) return;
+  const sx = tx * TILE_SIZE - cameraX;
+  const sy = ty * TILE_SIZE - cameraY;
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const scale = 2.0;
+  const drawW = TILE_SIZE * scale;
+  const drawH = TILE_SIZE * scale * aspect;
+  const drawX = sx + (TILE_SIZE - drawW) / 2;
+  const drawY = sy + TILE_SIZE - drawH;
+  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+}
+
 function drawMyPlayer(char) {
   const sx = char.x * TILE_SIZE - cameraX;
   const sy = char.y * TILE_SIZE - cameraY;
@@ -2225,20 +2620,29 @@ function drawMyPlayer(char) {
       }
     }
 
-    // Chest armor overlay sprite
-    if (char.equipped_chest && CHEST_SPRITES[char.equipped_chest]) {
-      const cs = CHEST_SPRITES[char.equipped_chest];
-      const cSpriteName = (moving && animFrame === 1) ? cs[1] : cs[0];
-      const cSpr = sprites[cSpriteName];
-      if (cSpr && cSpr.complete && cSpr.naturalWidth > 0) {
-        if (!shouldFlip) {
-          ctx.drawImage(cSpr, sx - half, sy - S * 0.75, S, S);
-        } else {
-          ctx.save();
-          ctx.translate(sx, sy - S * 0.75);
-          ctx.scale(-1, 1);
-          ctx.drawImage(cSpr, -half, 0, S, S);
-          ctx.restore();
+    // Equipment overlay layers: Calças > Botas > Peitoral > Elmo (bottom to top)
+    const equipLayers = [
+      { slot: 'equipped_legs', map: LEGS_SPRITES },
+      { slot: 'equipped_boots', map: BOOTS_SPRITES },
+      { slot: 'equipped_chest', map: CHEST_SPRITES },
+      { slot: 'equipped_helmet', map: HELMET_SPRITES },
+    ];
+    for (const layer of equipLayers) {
+      const itemId = char[layer.slot];
+      if (itemId && layer.map[itemId]) {
+        const pair = layer.map[itemId];
+        const eName = (moving && animFrame === 1) ? pair[1] : pair[0];
+        const eSpr = sprites[eName];
+        if (eSpr && eSpr.complete && eSpr.naturalWidth > 0) {
+          if (!shouldFlip) {
+            ctx.drawImage(eSpr, sx - half, sy - S * 0.75, S, S);
+          } else {
+            ctx.save();
+            ctx.translate(sx, sy - S * 0.75);
+            ctx.scale(-1, 1);
+            ctx.drawImage(eSpr, -half, 0, S, S);
+            ctx.restore();
+          }
         }
       }
     }
@@ -2253,7 +2657,7 @@ function drawMyPlayer(char) {
   // HP bar below name
   drawHPBar(sx, sy - S * 1.05, char.hp, char.max_hp, '#44cc44');
 
-  // BalÃ£o de fala do prÃ³prio jogador
+  // Balão de fala do próprio jogador
   if (myChatBubble && (Date.now() - myChatBubble.time < 5000)) {
     drawChatBubble(sx, sy - S * 1.4, myChatBubble.message);
   }
@@ -2286,7 +2690,7 @@ function drawChatBubble(screenX, screenY, message) {
   ctx.shadowBlur = 4;
   ctx.shadowOffsetY = 2;
 
-  // Fundo do balÃ£o
+  // Fundo do balão
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
   ctx.beginPath();
   const r = 6;
@@ -2302,7 +2706,7 @@ function drawChatBubble(screenX, screenY, message) {
   ctx.closePath();
   ctx.fill();
 
-  // TriÃ¢ngulo (pontinha do balÃ£o)
+  // Triângulo (pontinha do balão)
   ctx.beginPath();
   ctx.moveTo(screenX - 4, boxY + boxHeight);
   ctx.lineTo(screenX + 4, boxY + boxHeight);
@@ -2325,8 +2729,14 @@ function drawChatBubble(screenX, screenY, message) {
 }
 
 function drawOtherPlayer(op) {
-  const sx = op.x * TILE_SIZE - cameraX;
-  const sy = op.y * TILE_SIZE - cameraY;
+  // Use interpolated position from cache
+  const cache = otherPlayersCache[op._cacheId];
+  const drawX = cache ? cache.x : op.x;
+  const drawY = cache ? cache.y : op.y;
+  const opAnimFrame = cache ? cache.animFrame : 0;
+
+  const sx = drawX * TILE_SIZE - cameraX;
+  const sy = drawY * TILE_SIZE - cameraY;
   const S = TILE_SIZE * 1.3; // sprite um pouco maior
   const half = S / 2;
 
@@ -2352,7 +2762,7 @@ function drawOtherPlayer(op) {
   } else {
     // Player sprites: parado (idle), alternate parado/andando (walking)
     // Sprites face LEFT by default. Flip for RIGHT and UP directions.
-    spriteName = (op.moving && animFrame === 1) ? 'andando' : 'parado';
+    spriteName = (op.moving && opAnimFrame === 1) ? 'andando' : 'parado';
     const shouldFlip = (op.direction === 'right' || op.direction === 'up');
 
     const spr = sprites[spriteName];
@@ -2376,7 +2786,7 @@ function drawOtherPlayer(op) {
     // Weapon overlay sprite (other player)
     if (op.equipped_weapon && WEAPON_SPRITES[op.equipped_weapon]) {
       const ws = WEAPON_SPRITES[op.equipped_weapon];
-      const wSpriteName = (op.moving && animFrame === 1) ? ws[1] : ws[0];
+      const wSpriteName = (op.moving && opAnimFrame === 1) ? ws[1] : ws[0];
       const wSpr = sprites[wSpriteName];
       if (wSpr && wSpr.complete && wSpr.naturalWidth > 0) {
         if (!shouldFlip) {
@@ -2391,20 +2801,29 @@ function drawOtherPlayer(op) {
       }
     }
 
-    // Chest armor overlay sprite (other player)
-    if (op.equipped_chest && CHEST_SPRITES[op.equipped_chest]) {
-      const cs = CHEST_SPRITES[op.equipped_chest];
-      const cSpriteName = (op.moving && animFrame === 1) ? cs[1] : cs[0];
-      const cSpr = sprites[cSpriteName];
-      if (cSpr && cSpr.complete && cSpr.naturalWidth > 0) {
-        if (!shouldFlip) {
-          ctx.drawImage(cSpr, sx - half, sy - S * 0.75, S, S);
-        } else {
-          ctx.save();
-          ctx.translate(sx, sy - S * 0.75);
-          ctx.scale(-1, 1);
-          ctx.drawImage(cSpr, -half, 0, S, S);
-          ctx.restore();
+    // Equipment overlay layers (other player): Calças > Botas > Peitoral > Elmo
+    const equipLayers = [
+      { slot: 'equipped_legs', map: LEGS_SPRITES },
+      { slot: 'equipped_boots', map: BOOTS_SPRITES },
+      { slot: 'equipped_chest', map: CHEST_SPRITES },
+      { slot: 'equipped_helmet', map: HELMET_SPRITES },
+    ];
+    for (const layer of equipLayers) {
+      const itemId = op[layer.slot];
+      if (itemId && layer.map[itemId]) {
+        const pair = layer.map[itemId];
+        const eName = (op.moving && opAnimFrame === 1) ? pair[1] : pair[0];
+        const eSpr = sprites[eName];
+        if (eSpr && eSpr.complete && eSpr.naturalWidth > 0) {
+          if (!shouldFlip) {
+            ctx.drawImage(eSpr, sx - half, sy - S * 0.75, S, S);
+          } else {
+            ctx.save();
+            ctx.translate(sx, sy - S * 0.75);
+            ctx.scale(-1, 1);
+            ctx.drawImage(eSpr, -half, 0, S, S);
+            ctx.restore();
+          }
         }
       }
     }
@@ -2416,7 +2835,7 @@ function drawOtherPlayer(op) {
   ctx.fillText(op.username, sx, sy - S * 1.2);
   drawHPBar(sx, sy - S * 1.05, op.hp, op.max_hp, '#44cc44');
 
-  // BalÃ£o de fala de outro jogador
+  // Balão de fala de outro jogador
   if (op.chatBubble) {
     drawChatBubble(sx, sy - S * 1.4, op.chatBubble);
   }
@@ -2452,6 +2871,28 @@ function drawEnemy(enemy) {
       ctx.fillStyle = '#000';
       ctx.fillRect(sx - S * 0.09, sy - S * 0.69, S * 0.06, S * 0.06);
       ctx.fillRect(sx + S * 0.03, sy - S * 0.69, S * 0.06, S * 0.06);
+    }
+  } else if (enemy.type === 'zombie') {
+    // Zumbi: sprites zumbiparado/zumbiandando, originalmente virado pra DIREITA
+    const spriteName = (enemy.moving && enemyAnimFrame === 1) ? 'zumbiandando' : 'zumbiparado';
+    const shouldFlip = (enemy.direction === 'left' || enemy.direction === 'down');
+    const spr = sprites[spriteName];
+    if (spr && spr.complete && spr.naturalWidth > 0) {
+      if (!shouldFlip) {
+        ctx.drawImage(spr, sx - half, sy - S * 0.75, S, S);
+      } else {
+        ctx.save();
+        ctx.translate(sx, sy - S * 0.75);
+        ctx.scale(-1, 1);
+        ctx.drawImage(spr, -half, 0, S, S);
+        ctx.restore();
+      }
+    } else {
+      // Fallback: green-gray rect
+      ctx.fillStyle = '#556b2f';
+      ctx.fillRect(sx - S * 0.19, sy - S * 0.56, S * 0.38, S * 0.69);
+      ctx.fillStyle = '#8fbc8f';
+      ctx.beginPath(); ctx.arc(sx, sy - S * 0.63, S * 0.19, 0, Math.PI * 2); ctx.fill();
     }
   } else if (enemy.type === 'cow') {
     // Vaca: sprites vacaparada/vacaandando/vacacomendo, originalmente virada pra DIREITA
@@ -2511,8 +2952,8 @@ function drawEnemy(enemy) {
   }
 
   // Name (on top)
-  const name = enemy.type === 'skeleton' ? 'Esqueleto' : (enemy.type === 'cow' ? 'Vaca' : 'Slime');
-  ctx.fillStyle = enemy.type === 'cow' ? '#ddcc88' : '#ff8888';
+  const name = enemy.type === 'skeleton' ? 'Esqueleto' : (enemy.type === 'zombie' ? 'Zumbi' : (enemy.type === 'cow' ? 'Vaca' : 'Slime'));
+  ctx.fillStyle = enemy.type === 'cow' ? '#ddcc88' : (enemy.type === 'zombie' ? '#88ff88' : '#ff8888');
   ctx.font = 'bold 10px Arial';
   ctx.textAlign = 'center';
   ctx.fillText(name, sx, sy - S * 1.2);
@@ -2716,7 +3157,8 @@ function drawMinimap() {
         case T.WINDOW_STONE: ctx.fillStyle = '#66aadd'; break;
         case T.TORCH_WALL: ctx.fillStyle = '#ff8800'; break;
         case T.WATER: ctx.fillStyle = '#2060c0'; break;
-        case T.TREE: ctx.fillStyle = '#1d4b0e'; break;
+        case T.WATER_RIVER: ctx.fillStyle = '#3a90d8'; break;
+        case T.TREE_CARVALHO: ctx.fillStyle = '#1d4b0e'; break;
         case T.WOOD_FLOOR: ctx.fillStyle = '#8a6240'; break;
         case T.CHURCH_FLOOR: ctx.fillStyle = '#a09870'; break;
         case T.RED_CARPET: ctx.fillStyle = '#8b1a1a'; break;
@@ -2747,10 +3189,27 @@ function drawMinimap() {
         case T.ROOF_BLUE: ctx.fillStyle = '#2050aa'; break;
         case T.ROOF_YELLOW: ctx.fillStyle = '#c8a020'; break;
         case T.BENCH: ctx.fillStyle = '#8a6a40'; break;
+        case T.TREE_BETULA: ctx.fillStyle = '#e8e0c0'; break;
+        case T.TREE_CARVALHO_SMALL: ctx.fillStyle = '#4a8a30'; break;
+        case T.TREE_MAGICA: ctx.fillStyle = '#6a2aaa'; break;
+        case T.TREE_MANGUE: ctx.fillStyle = '#2a6a20'; break;
+        case T.TREE_PINHEIRO: ctx.fillStyle = '#0e4a20'; break;
+        case T.TREE_PINOS: ctx.fillStyle = '#1a5a1a'; break;
         default: ctx.fillStyle = '#000';
       }
       ctx.fillRect(mmX + tx * tileW, mmY + ty * tileH, Math.ceil(tileW), Math.ceil(tileH));
     }
+  }
+
+  // Image objects on minimap
+  for (const obj of mapObjects) {
+    const img = mapObjectImages[obj.id];
+    if (!img || !img.complete || !img.naturalWidth) continue;
+    const ox = mmX + obj.x * tileW;
+    const oy = mmY + obj.y * tileH;
+    const ow = Math.max(1, obj.width * tileW);
+    const oh = Math.max(1, obj.height * tileH);
+    ctx.drawImage(img, ox, oy, ow, oh);
   }
 
   // NPCs on minimap
@@ -2821,7 +3280,7 @@ function updateStatusUI() {
   const equipSlots = {
     helmet: { field: 'equipped_helmet', label: 'Elmo' },
     chest: { field: 'equipped_chest', label: 'Peitoral' },
-    legs: { field: 'equipped_legs', label: 'CalÃ§a' },
+    legs: { field: 'equipped_legs', label: 'Calça' },
     boots: { field: 'equipped_boots', label: 'Botas' },
     weapon: { field: 'equipped_weapon', label: 'Arma' },
     weapon2: { field: 'equipped_weapon2', label: 'Escudo' },
@@ -2833,7 +3292,7 @@ function updateStatusUI() {
     const box = document.getElementById('equip-' + slotId);
     if (!box) continue;
     const itemId = myChar[info.field];
-    // Limpar conteÃºdo anterior
+    // Limpar conteúdo anterior
     box.innerHTML = '';
     if (itemId && ITEMS_CLIENT[itemId]) {
       box.classList.add('has-item');
@@ -3131,7 +3590,7 @@ function updateQuestTrackerUI() {
     return;
   }
   tracker.style.display = 'block';
-  let html = '<h4>ðŸ“œ MissÃµes</h4>';
+  let html = '<h4>ðŸ“œ Missões</h4>';
   for (const q of activeQuests) {
     const def = q; // already merged with QUEST_DEFS
     let progressHtml = '';
@@ -3176,7 +3635,7 @@ function showNpcDialog(data) {
 
   if (data.action === 'offer') {
     const acceptBtn = document.createElement('button');
-    acceptBtn.textContent = 'Aceitar MissÃ£o';
+    acceptBtn.textContent = 'Aceitar Missão';
     acceptBtn.className = 'dialog-btn-accept';
     acceptBtn.addEventListener('click', () => {
       socket.emit('acceptQuest', { questId: data.questId });
@@ -3196,7 +3655,7 @@ function showNpcDialog(data) {
     btns.appendChild(completeBtn);
   }
 
-  // Crafting recipes (ArtesÃ£o)
+  // Crafting recipes (Artesão)
   if (data.isCrafter && data.recipes && data.recipes.length > 0) {
     const recipesDiv = document.createElement('div');
     recipesDiv.className = 'craft-recipes';
@@ -3208,9 +3667,16 @@ function showNpcDialog(data) {
         const itemInfo = ITEMS_CLIENT[ing.itemId];
         return `${ing.qty}x ${itemInfo ? itemInfo.name : ing.itemId}`;
       }).join(', ');
+      const resultItem = ITEMS_CLIENT[recipe.resultId];
+      const iconSrc = resultItem && resultItem.icon ? resultItem.icon : '';
       recipeDiv.innerHTML = `
-        <div class="craft-recipe-name">${recipe.name}</div>
-        <div class="craft-recipe-desc">${ingredientText}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${iconSrc ? `<img src="${iconSrc}" style="width:32px;height:32px;image-rendering:pixelated;" />` : ''}
+          <div>
+            <div class="craft-recipe-name">${recipe.name}</div>
+            <div class="craft-recipe-desc">${ingredientText}</div>
+          </div>
+        </div>
       `;
       const craftBtn = document.createElement('button');
       craftBtn.textContent = recipe.canCraft ? 'Criar' : 'Materiais insuficientes';

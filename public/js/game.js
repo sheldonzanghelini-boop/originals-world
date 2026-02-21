@@ -1,4 +1,4 @@
-﻿// ============================
+// ============================
 // ORIGINALS WORLD - GAME CLIENT
 // ============================
 
@@ -57,7 +57,8 @@ const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE:5, WOOD_F
   FLOWERS:10, BUSH:11, ROCK:12, RED_CARPET:13, ALTAR:14, ANVIL:15, FURNACE:16, BOOKSHELF:17, TABLE:18, CHAIR:19,
   WELL:20, FENCE:21, ROOF_STONE:22, ROOF_WOOD:23, WINDOW_STONE:24, WINDOW_WOOD:25, CROSS:26, TALL_GRASS:27, MUSHROOM:28,
   BARREL:29, CRATE:30, TORCH_WALL:31, BED:32, RUG:33, CHURCH_PEW:34, DARK_GRASS:35,
-  GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41 };
+  GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41,
+  ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45 };
 const BLOCKED = new Set([T.STONE_WALL, T.WATER, T.TREE, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
   T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL]);
 
@@ -84,6 +85,37 @@ let currentQuadrant = 'E5';
 let currentQuadrantName = 'Cidade de Origens';
 let quadrantNeighbors = { left: null, right: null, up: null, down: null };
 let transitioning = false;
+
+// Image objects on the map (solid blocks with images)
+let mapObjects = [];
+const mapObjectImages = {}; // cache: id -> Image element
+
+function loadMapObjectImages() {
+  for (const obj of mapObjects) {
+    if (!mapObjectImages[obj.id]) {
+      const img = new Image();
+      img.src = obj.src;
+      mapObjectImages[obj.id] = img;
+    }
+  }
+  // Clean up removed objects
+  const ids = new Set(mapObjects.map(o => o.id));
+  for (const k of Object.keys(mapObjectImages)) {
+    if (!ids.has(k)) delete mapObjectImages[k];
+  }
+}
+
+function drawMapObjects() {
+  for (const obj of mapObjects) {
+    const img = mapObjectImages[obj.id];
+    if (!img || !img.complete || !img.naturalWidth) continue;
+    const sx = obj.x * TILE_SIZE - cameraX;
+    const sy = obj.y * TILE_SIZE - cameraY;
+    const sw = obj.width * TILE_SIZE;
+    const sh = obj.height * TILE_SIZE;
+    ctx.drawImage(img, sx, sy, sw, sh);
+  }
+}
 
 // Item data map (client-side)
 const ITEMS_CLIENT = {
@@ -155,82 +187,12 @@ for (const [name, src] of spriteNames) {
   sprites[name] = img;
 }
 
-// ============= TILESET IMAGE LOADING =============
-const tilesetImages = {};
-let tilesetsLoaded = 0;
-const tilesetSources = [
-  ['grassDirt', '/assets/tilesets/grass-dirt.png'],
-];
-for (const [name, src] of tilesetSources) {
-  const img = new Image();
-  img.onload = () => { tilesetsLoaded++; };
-  img.onerror = () => { console.warn('Tileset not found:', src); tilesetsLoaded++; };
-  img.src = src;
-  tilesetImages[name] = img;
-}
-
-// Tileset grass-dirt layout (4 cols x 4 rows, each tile 32x32):
-//  0: Grass A      1: Grass B      2: Grass C      3: Dirt full
-//  4: Edge Top     5: Edge Bottom  6: Edge Left    7: Edge Right
-//  8: Ext TL       9: Ext TR      10: Ext BL      11: Ext BR
-// 12: Int TL      13: Int TR      14: Int BL      15: Int BR
-const TSET_COLS = 4;
-const TSET_TILE = 32;
-
-function tilesetSrc(index) {
-  const col = index % TSET_COLS;
-  const row = Math.floor(index / TSET_COLS);
-  return { sx: col * TSET_TILE, sy: row * TSET_TILE };
-}
-
-// Helper: is tile at (tx,ty) a "ground" type (grass-like)?
-const GROUND_TILES = new Set([T.GRASS, T.DARK_GRASS, T.TALL_GRASS, T.FLOWERS, T.MUSHROOM]);
-function isGround(tx, ty) {
-  if (!gameMap || ty < 0 || ty >= mapHeight || tx < 0 || tx >= mapWidth) return true;
-  return GROUND_TILES.has(gameMap[ty][tx]);
-}
-function isDirt(tx, ty) {
-  if (!gameMap || ty < 0 || ty >= mapHeight || tx < 0 || tx >= mapWidth) return false;
-  return gameMap[ty][tx] === T.DIRT;
-}
-
-// Determine which tileset sub-tile index to use for a grass tile based on neighbors
-function getGrassTransitionIndex(tx, ty) {
-  const dT = isDirt(tx, ty - 1);
-  const dB = isDirt(tx, ty + 1);
-  const dL = isDirt(tx - 1, ty);
-  const dR = isDirt(tx + 1, ty);
-  const dTL = isDirt(tx - 1, ty - 1);
-  const dTR = isDirt(tx + 1, ty - 1);
-  const dBL = isDirt(tx - 1, ty + 1);
-  const dBR = isDirt(tx + 1, ty + 1);
-
-  // Edge cases (dirt on one side)
-  if (dT && !dB && !dL && !dR) return 4;  // dirt above
-  if (dB && !dT && !dL && !dR) return 5;  // dirt below
-  if (dL && !dR && !dT && !dB) return 6;  // dirt left
-  if (dR && !dL && !dT && !dB) return 7;  // dirt right
-
-  // External corners (dirt in one corner only)
-  if (dT && dL) return 8;   // Ext TL
-  if (dT && dR) return 9;   // Ext TR
-  if (dB && dL) return 10;  // Ext BL
-  if (dB && dR) return 11;  // Ext BR
-
-  // Internal corners (diagonal dirt only, no adjacent edge dirt)
-  if (!dT && !dL && dTL) return 12; // Int TL
-  if (!dT && !dR && dTR) return 13; // Int TR
-  if (!dB && !dL && dBL) return 14; // Int BL
-  if (!dB && !dR && dBR) return 15; // Int BR
-
-  // Pure grass variations
-  return (tx * 7 + ty * 13) % 3; // 0, 1, or 2
-}
+// (Auto-tiling removed — using simple procedural tile cache only)
 // Pre-render detailed tiles ONCE at fixed base resolution, then scale via drawImage
 const tileCanvasCache = {};
 let tileCacheBuilt = false;
 const TILE_VARIANTS = 8; // variants per tile type
-const TILE_BASE = 32; // fixed render resolution - never changes
+const TILE_BASE = 32; // fixed render resolution (32x32 Tibia-style pixel art)
 
 function seededRand(seed) {
   let s = seed % 2147483647;
@@ -238,27 +200,23 @@ function seededRand(seed) {
   return function() { s = s * 16807 % 2147483647; return (s - 1) / 2147483646; };
 }
 
-// Noise fill helper: scatter colored pixels for texture
-function fillNoise(c, x, y, w, h, colors, density, rng) {
-  for (let py = 0; py < h; py++) {
-    for (let px = 0; px < w; px++) {
-      if (rng() < density) {
-        c.fillStyle = colors[Math.floor(rng() * colors.length)];
-        c.fillRect(x + px, y + py, 1, 1);
-      }
-    }
+// Clean texture helper: fewer pixels, larger patches (less noisy)
+function fillCleanTexture(c, x, y, w, h, colors, patchCount, rng) {
+  for (let i = 0; i < patchCount; i++) {
+    const px = Math.floor(rng() * (w - 1));
+    const py = Math.floor(rng() * (h - 1));
+    c.fillStyle = colors[Math.floor(rng() * colors.length)];
+    const pw = rng() < 0.5 ? 2 : 1;
+    const ph = rng() < 0.5 ? 2 : 1;
+    c.fillRect(x + px, y + py, pw, ph);
   }
 }
 
-// Dither helper
-function fillDither(c, x, y, w, h, c1, c2, rng) {
-  for (let py = 0; py < h; py++) {
-    for (let px = 0; px < w; px++) {
-      c.fillStyle = ((px + py) % 2 === 0) ? c1 : c2;
-      if (rng() < 0.15) c.fillStyle = rng() < 0.5 ? c1 : c2;
-      c.fillRect(x + px, y + py, 1, 1);
-    }
-  }
+// Legacy noise fill (reduced density for cleaner look)
+function fillNoise(c, x, y, w, h, colors, density, rng) {
+  // Use patch-based approach instead of per-pixel noise
+  const patchCount = Math.max(2, Math.floor(w * h * density * 0.3));
+  fillCleanTexture(c, x, y, w, h, colors, patchCount, rng);
 }
 
 function initTileCache() {
@@ -266,7 +224,6 @@ function initTileCache() {
   if (tileCacheBuilt) return;
   tileCacheBuilt = true;
   const s = TILE_BASE;
-
   for (let tileType = 0; tileType <= 41; tileType++) {
     for (let v = 0; v < TILE_VARIANTS; v++) {
       const key = tileType + '_' + v;
@@ -292,32 +249,38 @@ function initTileCache() {
 
 function renderWaterTile(c, variant, frame, s) {
   const rng = seededRand(variant * 137 + frame * 31 + 999);
-  // Deep water base
-  c.fillStyle = '#0e3a6e';
+  // Deep blue base
+  c.fillStyle = '#1a4a85';
   c.fillRect(0, 0, s, s);
-  // Depth layers
-  fillNoise(c, 0, 0, s, s, ['#0c3260','#103870','#0a2e5c','#124078','#0f3668'], 0.35, rng);
-  // Mid tones
-  fillNoise(c, 0, 0, s, s, ['#185090','#1a5498','#164c88'], 0.12, rng);
-  // Wave highlights based on frame
+  // Depth variation patches (scaled)
+  const wShades = ['#164278','#1e528e','#1a4a85','#184c8a','#1c5090'];
+  const depthN = Math.floor(s * s / 80);
+  for (let i = 0; i < depthN; i++) {
+    c.fillStyle = wShades[Math.floor(rng() * wShades.length)];
+    c.fillRect(Math.floor(rng() * (s - 2)), Math.floor(rng() * (s - 2)),
+      1 + Math.floor(rng() * 2), 1 + Math.floor(rng() * 2));
+  }
+  // Primary wave lines (animated)
   const wOff = frame * Math.floor(s / 3);
-  c.fillStyle = 'rgba(80,150,220,0.3)';
+  c.fillStyle = '#2a6aaa';
   for (let px = 0; px < s; px++) {
-    const wy = Math.floor(s * 0.3 + Math.sin((px + wOff) * 0.4) * 2);
-    c.fillRect(px, wy, 1, 1);
-    const wy2 = Math.floor(s * 0.7 + Math.sin((px + wOff + 5) * 0.3) * 2);
+    const wy1 = Math.floor(s * 0.25 + Math.sin((px + wOff) * 0.28) * 2.5);
+    c.fillRect(px, wy1, 1, 1);
+    const wy2 = Math.floor(s * 0.65 + Math.sin((px + wOff + 8) * 0.24) * 2.5);
     c.fillRect(px, wy2, 1, 1);
   }
-  // Sparkle
-  c.fillStyle = 'rgba(180,220,255,0.35)';
-  for (let i = 0; i < 3; i++) {
-    const spx = Math.floor(rng() * s), spy = Math.floor(rng() * s);
-    if ((spx + frame) % 3 === 0) c.fillRect(spx, spy, 1, 1);
+  // Secondary subtle wave
+  c.fillStyle = '#225e98';
+  for (let px = 0; px < s; px++) {
+    const wy3 = Math.floor(s * 0.45 + Math.sin((px + wOff + 4) * 0.32) * 2);
+    c.fillRect(px, wy3, 1, 1);
   }
-  // Foam specks
-  c.fillStyle = 'rgba(200,230,255,0.15)';
-  for (let i = 0; i < 4; i++) {
-    c.fillRect(Math.floor(rng()*s), Math.floor(rng()*s), 2, 1);
+  // Sparkle highlights
+  c.fillStyle = '#5a9ad0';
+  const sparkles = Math.max(2, Math.floor(s / 10));
+  for (let i = 0; i < sparkles; i++) {
+    const spx = Math.floor(rng() * s), spy = Math.floor(rng() * s);
+    if ((spx + spy + frame) % 4 === 0) c.fillRect(spx, spy, 1, 1);
   }
 }
 
@@ -328,109 +291,115 @@ function renderDetailedTile(c, tileType, variant, s) {
   switch (tileType) {
     // ===== GRASS =====
     case T.GRASS: {
-      // Rich base
-      c.fillStyle = '#3a7a2d';
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      // Dense noise texture - many shades of green
-      fillNoise(c, 0, 0, s, s, [
-        '#347228','#3e8232','#2e6a22','#429038','#387830',
-        '#2c6420','#44923a','#306c24','#3a7e2e','#367628'
-      ], 0.7, rng);
-      // Lighter patches
-      const px1 = Math.floor(rng()*s*0.6), py1 = Math.floor(rng()*s*0.6);
-      fillNoise(c, px1, py1, Math.floor(s*0.4), Math.floor(s*0.4), ['#4a9a40','#4e9e44','#52a248'], 0.3, rng);
-      // Darker patches
-      const px2 = Math.floor(rng()*s*0.5), py2 = Math.floor(rng()*s*0.5);
-      fillNoise(c, px2, py2, Math.floor(s*0.35), Math.floor(s*0.35), ['#265e1a','#1e5214','#2a6a1c'], 0.25, rng);
-      // Grass blades - tiny vertical strokes
-      for (let i = 0; i < Math.floor(s*0.4); i++) {
-        const bx = Math.floor(rng() * s);
-        const by = Math.floor(rng() * (s-3));
-        const bh = Math.floor(rng()*3)+2;
-        c.fillStyle = ['#4ea844','#56b04a','#48a03e','#5ab850'][Math.floor(rng()*4)];
-        c.fillRect(bx, by, 1, bh);
+      // Rich dithered texture (scales with resolution)
+      const gShades = ['#367628','#3e7e30','#347224','#408032','#387a2a','#3c7c2e'];
+      const gPatches = Math.floor(s * s / 65);
+      for (let i = 0; i < gPatches; i++) {
+        c.fillStyle = gShades[Math.floor(rng() * gShades.length)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.4 ? 2 : 1, rng() < 0.4 ? 2 : 1);
       }
-      // Tiny dirt/brown specks
-      fillNoise(c, 0, 0, s, s, ['#5a5030','#6a6040','#4a4020'], 0.03, rng);
-      // Yellow highlights
-      fillNoise(c, 0, 0, s, s, ['#6abb55','#72c45a'], 0.02, rng);
+      // Grass blade tufts (scaled)
+      const gTufts = Math.floor(s / 7) + (v % 3);
+      for (let i = 0; i < gTufts; i++) {
+        const tx = 3 + Math.floor(rng() * (s - 6));
+        const ty = 3 + Math.floor(rng() * (s - 8));
+        c.fillStyle = '#4a9a3a';
+        c.fillRect(tx, ty, 1, 3);
+        if (rng() < 0.5) c.fillRect(tx + 1, ty + 1, 1, 2);
+        if (rng() < 0.3) c.fillRect(tx - 1, ty + 1, 1, 2);
+      }
+      // Dark accent dots
+      c.fillStyle = '#2e6820';
+      const gAccents = Math.max(1, Math.floor(s / 16));
+      for (let i = 0; i < gAccents; i++) {
+        c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 2)), 2, 1);
+      }
       break;
     }
 
     // ===== DARK GRASS =====
     case T.DARK_GRASS: {
-      c.fillStyle = '#1e5514';
+      c.fillStyle = '#2a5c18';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, [
-        '#1a5010','#225c18','#164a0e','#1e5814','#205a16',
-        '#14460c','#266020','#1c5412','#184e10','#245e1c'
-      ], 0.7, rng);
-      // Dark leaf litter
-      fillNoise(c, 0, 0, s, s, ['#3a3018','#2c2410','#342a14'], 0.06, rng);
-      // Moss highlights
-      fillNoise(c, 0, 0, s, s, ['#2a7020','#328028'], 0.05, rng);
-      // Shadow patches
-      const dx = Math.floor(rng()*s*0.5), dy = Math.floor(rng()*s*0.5);
-      fillNoise(c, dx, dy, Math.floor(s*0.4), Math.floor(s*0.4), ['#103808','#0c3006'], 0.2, rng);
-      // Sparse grass blades
-      for (let i = 0; i < Math.floor(s*0.25); i++) {
-        const bx = Math.floor(rng()*s), by = Math.floor(rng()*(s-3));
-        c.fillStyle = ['#2a7820','#328228','#207018'][Math.floor(rng()*3)];
-        c.fillRect(bx, by, 1, Math.floor(rng()*3)+1);
+      const dgShades = ['#225414','#2e6220','#1e4e10','#286018','#204c12'];
+      const dgP = Math.floor(s * s / 70);
+      for (let i = 0; i < dgP; i++) {
+        c.fillStyle = dgShades[Math.floor(rng() * dgShades.length)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, rng() < 0.3 ? 2 : 1);
+      }
+      // Grass blade tufts (like normal grass but darker)
+      const dgTufts = Math.floor(s / 7) + (v % 3);
+      for (let i = 0; i < dgTufts; i++) {
+        const tx = 3 + Math.floor(rng() * (s - 6));
+        const ty = 3 + Math.floor(rng() * (s - 8));
+        c.fillStyle = '#388a28';
+        c.fillRect(tx, ty, 1, 3);
+        if (rng() < 0.5) c.fillRect(tx + 1, ty + 1, 1, 2);
+        if (rng() < 0.3) c.fillRect(tx - 1, ty + 1, 1, 2);
+      }
+      // Dark specks
+      const dgSpecks = Math.max(2, Math.floor(s / 10));
+      for (let i = 0; i < dgSpecks; i++) {
+        c.fillStyle = '#1a4a0c';
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      // Accent dots (subtly lighter)
+      c.fillStyle = '#245816';
+      const dgAccents = Math.max(1, Math.floor(s / 16));
+      for (let i = 0; i < dgAccents; i++) {
+        c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 2)), 2, 1);
       }
       break;
     }
 
     // ===== TALL GRASS =====
     case T.TALL_GRASS: {
-      c.fillStyle = '#347228';
+      c.fillStyle = '#348a28';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#2e6a22','#3a7e2e','#327028','#3e8232'], 0.5, rng);
-      // Many tall grass blades
-      for (let i = 0; i < Math.floor(s*0.8); i++) {
-        const bx = Math.floor(rng()*s);
-        const bh = Math.floor(rng()*s*0.5) + Math.floor(s*0.3);
-        const by = s - bh;
-        const sway = Math.floor(rng()*3)-1;
-        c.fillStyle = ['#4ea844','#56b04a','#48a03e','#5cb850','#44963a','#60c054'][Math.floor(rng()*6)];
-        // Draw blade as thin line with slight sway
-        for (let j = 0; j < bh; j++) {
-          const ox = Math.floor(sway * j / bh);
-          c.fillRect(bx + ox, by + j, 1, 1);
-        }
+      const tgP = Math.floor(s * s / 70);
+      for (let i = 0; i < tgP; i++) {
+        c.fillStyle = ['#2e7a22','#3a8e2e','#327e26'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
       }
-      // Tips
-      fillNoise(c, 0, 0, s, Math.floor(s*0.3), ['#6abb55','#72c45a','#62b050'], 0.08, rng);
+      // Tall blades (scaled)
+      const tgBlades = Math.max(4, Math.floor(s / 5));
+      for (let i = 0; i < tgBlades; i++) {
+        const bx = Math.floor(rng() * (s - 1));
+        const bh = Math.floor(s * 0.15) + Math.floor(rng() * Math.floor(s * 0.15));
+        const by = s - bh;
+        c.fillStyle = ['#4ea844','#56b04a','#48a03e'][Math.floor(rng() * 3)];
+        c.fillRect(bx, by, 1, bh);
+        if (rng() < 0.3) c.fillRect(bx + 1, by + 2, 1, bh - 3);
+      }
       break;
     }
 
     // ===== FLOWERS =====
     case T.FLOWERS: {
-      // grass base
-      c.fillStyle = '#3a7a2d';
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232','#2e6a22','#429038'], 0.55, rng);
-      // Grass blades
-      for (let i = 0; i < Math.floor(s*0.3); i++) {
-        const bx = Math.floor(rng()*s), by = Math.floor(rng()*(s-2));
-        c.fillStyle = ['#4ea844','#48a03e'][Math.floor(rng()*2)];
-        c.fillRect(bx, by, 1, 2);
+      const flP = Math.floor(s * s / 70);
+      for (let i = 0; i < flP; i++) {
+        c.fillStyle = ['#358226','#3f9232','#367628'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, rng() < 0.3 ? 2 : 1);
       }
-      // Flowers (5-8 per tile)
-      const nFlowers = 4 + Math.floor(rng() * 5);
-      for (let i = 0; i < nFlowers; i++) {
-        const fx = Math.floor(rng()*(s-4))+2;
-        const fy = Math.floor(rng()*(s-5))+2;
-        // Stem
+      // Flowers (scaled count)
+      const nF = Math.max(2, Math.floor(s / 8));
+      for (let i = 0; i < nF; i++) {
+        const fx = 2 + Math.floor(rng() * (s - 5));
+        const fy = 2 + Math.floor(rng() * (s - 6));
         c.fillStyle = '#2a6a1c';
-        c.fillRect(fx, fy+2, 1, 3);
-        // Petals
-        const fc = ['#ff4466','#ffaa33','#ff6688','#ffdd44','#ee55aa','#aaddff','#ff8855','#dd44ff'][Math.floor(rng()*8)];
+        c.fillRect(fx, fy + 3, 1, Math.max(2, Math.floor(s * 0.08)));
+        const fc = ['#ff4466','#ffaa33','#ff6688','#ffdd44','#ee55aa'][Math.floor(rng() * 5)];
         c.fillStyle = fc;
-        c.fillRect(fx-1, fy, 3, 1);
-        c.fillRect(fx, fy-1, 1, 3);
-        c.fillRect(fx-1, fy+1, 3, 1);
-        // Center
+        c.fillRect(fx - 1, fy, 3, 1);
+        c.fillRect(fx, fy - 1, 1, 3);
         c.fillStyle = '#ffee44';
         c.fillRect(fx, fy, 1, 1);
       }
@@ -439,184 +408,224 @@ function renderDetailedTile(c, tileType, variant, s) {
 
     // ===== MUSHROOM =====
     case T.MUSHROOM: {
-      c.fillStyle = '#3a7a2d';
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232','#2e6a22'], 0.45, rng);
-      const mx = Math.floor(s*0.3 + rng()*s*0.2);
-      const my = Math.floor(s*0.3);
+      const msP = Math.floor(s * s / 70);
+      for (let i = 0; i < msP; i++) {
+        c.fillStyle = ['#358226','#3f9232','#367628'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Mushroom (scaled)
+      const mx = Math.floor(s * 0.38), my = Math.floor(s * 0.32);
+      const mStem = Math.max(2, Math.floor(s * 0.08));
+      const mCapW = Math.max(5, Math.floor(s * 0.22));
+      const mCapH = Math.max(3, Math.floor(s * 0.12));
       // Stem
       c.fillStyle = '#e8dcc0';
-      c.fillRect(mx+Math.floor(s*0.05),my+Math.floor(s*0.25),Math.floor(s*0.14),Math.floor(s*0.3));
-      c.fillStyle = '#ddd0b0';
-      c.fillRect(mx+Math.floor(s*0.06),my+Math.floor(s*0.35),Math.floor(s*0.06),Math.floor(s*0.18));
+      c.fillRect(mx, my + mCapH, mStem, Math.floor(s * 0.16));
+      c.fillStyle = '#d8ccb0';
+      c.fillRect(mx + mStem - 1, my + mCapH, 1, Math.floor(s * 0.16));
       // Cap
       c.fillStyle = '#cc2020';
-      const cw = Math.floor(s*0.35), ch = Math.floor(s*0.18);
-      c.fillRect(mx - Math.floor(s*0.06), my, cw, ch);
-      c.fillRect(mx - Math.floor(s*0.02), my - Math.floor(s*0.06), cw - Math.floor(s*0.08), Math.floor(s*0.08));
-      // Cap shading
-      c.fillStyle = '#aa1818';
-      c.fillRect(mx - Math.floor(s*0.06), my + ch-2, cw, 2);
-      // White dots on cap
+      c.fillRect(mx - Math.floor(mCapW * 0.4), my, mCapW, mCapH);
+      // White spots
       c.fillStyle = '#fff';
-      c.fillRect(mx, my+Math.floor(s*0.03), 2, 2);
-      c.fillRect(mx+Math.floor(s*0.15), my+Math.floor(s*0.06), 2, 1);
-      c.fillRect(mx+Math.floor(s*0.07), my-Math.floor(s*0.02), 1, 1);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.12)';
-      c.fillRect(mx-Math.floor(s*0.04), my+Math.floor(s*0.55), Math.floor(s*0.35), Math.floor(s*0.06));
+      c.fillRect(mx - Math.floor(mCapW * 0.2), my + 1, 1, 1);
+      c.fillRect(mx + Math.floor(mCapW * 0.15), my, 1, 1);
+      if (s >= 24) c.fillRect(mx + Math.floor(mCapW * 0.3), my + 1, 1, 1);
       break;
     }
 
     // ===== BUSH =====
     case T.BUSH: {
-      c.fillStyle = '#3a7a2d';
+      // Grass background
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232','#2e6a22'], 0.4, rng);
+      const bshP = Math.floor(s * s / 80);
+      for (let i = 0; i < bshP; i++) {
+        c.fillStyle = ['#367628','#3e7e30','#347224'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
+      }
       // Ground shadow
-      c.fillStyle = 'rgba(0,0,0,0.18)';
-      const bw = Math.floor(s*0.7), bh = Math.floor(s*0.15);
-      c.fillRect(Math.floor(s*0.15), Math.floor(s*0.78), bw, bh);
-      // Bush body - dark core
-      c.fillStyle = '#145008';
-      const bushW = Math.floor(s*0.75), bushH = Math.floor(s*0.55);
-      const bushX = Math.floor(s*0.12), bushY = Math.floor(s*0.2);
-      c.fillRect(bushX, bushY, bushW, bushH);
-      c.fillRect(bushX+Math.floor(s*0.06), bushY-Math.floor(s*0.06), bushW-Math.floor(s*0.12), Math.floor(s*0.08));
-      // Leaf texture layers
-      fillNoise(c, bushX, bushY, bushW, bushH, ['#1a5c0e','#1e6412','#226a16','#186010'], 0.5, rng);
-      fillNoise(c, bushX, bushY, bushW, Math.floor(bushH*0.5), ['#2a7820','#2e7e24','#328228'], 0.3, rng);
-      // Bright highlights on top
-      fillNoise(c, bushX+2, bushY, bushW-4, Math.floor(bushH*0.3), ['#3a8a2e','#3e9032','#429436'], 0.25, rng);
-      // Individual leaf shapes
-      for (let i = 0; i < 6; i++) {
-        const lx = bushX + Math.floor(rng()*bushW);
-        const ly = bushY + Math.floor(rng()*bushH);
-        c.fillStyle = ['#2a7820','#3a8a2e','#1e6412'][Math.floor(rng()*3)];
-        c.fillRect(lx, ly, 3, 2);
-        c.fillRect(lx+1, ly-1, 1, 1);
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      const bshSx = Math.floor(s * 0.14), bshSy = Math.floor(s * 0.78);
+      c.fillRect(bshSx, bshSy, Math.floor(s * 0.72), Math.floor(s * 0.08));
+      // Bush body - rounded oval shape
+      const bx = Math.floor(s * 0.1), bby = Math.floor(s * 0.18);
+      const bw = Math.floor(s * 0.8), bh = Math.floor(s * 0.6);
+      // Dark green base (rounded edges)
+      const inset = Math.max(2, Math.floor(s * 0.08));
+      c.fillStyle = '#1a5c0e';
+      c.fillRect(bx + inset, bby, bw - inset * 2, bh);
+      c.fillRect(bx + 1, bby + inset, bw - 2, bh - inset * 2);
+      c.fillRect(bx, bby + inset + 1, bw, bh - inset * 2 - 2);
+      // Medium green layer
+      c.fillStyle = '#226a14';
+      c.fillRect(bx + inset + 1, bby + 1, bw - inset * 2 - 2, bh - 3);
+      c.fillRect(bx + 2, bby + inset + 1, bw - 4, bh - inset * 2 - 2);
+      // Light highlight top
+      c.fillStyle = '#2e7a1e';
+      c.fillRect(bx + inset + 2, bby + 1, bw - inset * 2 - 4, Math.floor(bh * 0.35));
+      c.fillStyle = '#3a8a2a';
+      c.fillRect(bx + inset + 3, bby, bw - inset * 2 - 6, Math.floor(bh * 0.18));
+      // Leaf detail
+      for (let i = 0; i < Math.floor(s / 8); i++) {
+        c.fillStyle = rng() < 0.5 ? '#144e0a' : '#2e7a1c';
+        c.fillRect(bx + inset + Math.floor(rng() * (bw - inset * 2)),
+          bby + 2 + Math.floor(rng() * (bh - 4)), 1, 1);
       }
       break;
     }
 
     // ===== ROCK =====
     case T.ROCK: {
-      c.fillStyle = '#3a7a2d';
+      // Grass background
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232','#2e6a22'], 0.4, rng);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.2)';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.72), Math.floor(s*0.76), Math.floor(s*0.15));
-      // Rock body
-      const rw = Math.floor(s*0.7), rh = Math.floor(s*0.5);
-      const rx = Math.floor(s*0.15), ry = Math.floor(s*0.22);
-      c.fillStyle = '#7a7a7a';
-      c.fillRect(rx, ry, rw, rh);
-      c.fillRect(rx+Math.floor(s*0.06), ry-Math.floor(s*0.06), rw-Math.floor(s*0.12), Math.floor(s*0.08));
-      // Rock texture
-      fillNoise(c, rx, ry, rw, rh, ['#6a6a6a','#808080','#747474','#8a8a8a','#767676','#727272'], 0.6, rng);
-      // Top highlight
-      fillNoise(c, rx+1, ry, rw-2, Math.floor(rh*0.25), ['#929292','#9a9a9a','#8e8e8e','#a0a0a0'], 0.5, rng);
-      // Bottom shadow
-      fillNoise(c, rx, ry+Math.floor(rh*0.7), rw, Math.floor(rh*0.3), ['#585858','#525252','#5e5e5e'], 0.4, rng);
-      // Cracks
-      c.fillStyle = '#4a4a4a';
-      const crx = rx + Math.floor(rng()*rw*0.5)+Math.floor(rw*0.2);
-      for (let cy = 0; cy < Math.floor(rh*0.6); cy++) {
-        c.fillRect(crx + Math.floor(rng()*3)-1, ry+Math.floor(rh*0.15)+cy, 1, 1);
+      const rkP = Math.floor(s * s / 80);
+      for (let i = 0; i < rkP; i++) {
+        c.fillStyle = ['#367628','#3e7e30','#347224'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
       }
-      // Moss
-      if (v % 3 === 0) {
-        fillNoise(c, rx, ry+Math.floor(rh*0.6), Math.floor(rw*0.4), Math.floor(rh*0.2), ['#4a7a3a','#3a6a2a'], 0.3, rng);
+      // Ground shadow
+      c.fillStyle = 'rgba(0,0,0,0.15)';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.72), Math.floor(s * 0.8), Math.floor(s * 0.1));
+      // Rock body - rounded
+      const rx = Math.floor(s * 0.12), ry = Math.floor(s * 0.15);
+      const rw = Math.floor(s * 0.76), rh = Math.floor(s * 0.58);
+      const rInset = Math.max(2, Math.floor(s * 0.06));
+      // Base shape
+      c.fillStyle = '#686868';
+      c.fillRect(rx + rInset, ry, rw - rInset * 2, rh);
+      c.fillRect(rx + 1, ry + rInset, rw - 2, rh - rInset);
+      c.fillRect(rx, ry + rInset + 1, rw, rh - rInset - 2);
+      // Mid-tone
+      c.fillStyle = '#7a7a7a';
+      c.fillRect(rx + rInset + 1, ry + 1, rw - rInset * 2 - 2, rh - 3);
+      // Highlight top third
+      c.fillStyle = '#8e8e8e';
+      c.fillRect(rx + rInset + 2, ry + 1, rw - rInset * 2 - 4, Math.floor(rh * 0.35));
+      c.fillStyle = '#9a9a9a';
+      c.fillRect(rx + rInset + 3, ry, rw - rInset * 2 - 6, Math.floor(rh * 0.2));
+      // Dark bottom
+      c.fillStyle = '#585858';
+      c.fillRect(rx + 1, ry + rh - Math.floor(rh * 0.25), rw - 2, Math.floor(rh * 0.25));
+      // Crack
+      c.fillStyle = '#4a4a4a';
+      const crX = rx + Math.floor(rw * 0.35);
+      for (let i = 0; i < Math.floor(rh * 0.5); i++) {
+        c.fillRect(crX + (i % 2), ry + 3 + i, 1, 1);
+      }
+      // Speckle detail
+      for (let i = 0; i < Math.floor(s / 10); i++) {
+        c.fillStyle = rng() < 0.5 ? '#5e5e5e' : '#8a8a8a';
+        c.fillRect(rx + 2 + Math.floor(rng() * (rw - 4)),
+          ry + 2 + Math.floor(rng() * (rh - 3)), 1, 1);
       }
       break;
     }
 
     // ===== DIRT =====
     case T.DIRT: {
-      c.fillStyle = '#7a6040';
+      c.fillStyle = '#8a6e48';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, [
-        '#6a5030','#7a6040','#8a7050','#705838','#7e6444',
-        '#685030','#846c48','#725a3a','#8a7454','#74603e'
-      ], 0.75, rng);
-      // Lighter patches
-      fillNoise(c, 0, 0, s, s, ['#9a8060','#907858'], 0.06, rng);
-      // Small pebbles
-      for (let i = 0; i < 3+Math.floor(rng()*3); i++) {
-        const px = Math.floor(rng()*s), py = Math.floor(rng()*s);
-        c.fillStyle = ['#5a4828','#666','#5e5040'][Math.floor(rng()*3)];
-        c.fillRect(px, py, 2, 2);
-        c.fillStyle = ['#6a5838','#777'][Math.floor(rng()*2)];
-        c.fillRect(px, py, 2, 1);
+      // Earthy texture (scaled)
+      const dtShades = ['#826644','#927a54','#7e6240','#886e4c','#7a5e3c'];
+      const dtP = Math.floor(s * s / 60);
+      for (let i = 0; i < dtP; i++) {
+        c.fillStyle = dtShades[Math.floor(rng() * dtShades.length)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.4 ? 2 : 1, rng() < 0.3 ? 2 : 1);
       }
-      // Darker cracks/lines
-      fillNoise(c, 0, 0, s, s, ['#5a4428','#4e3a20'], 0.04, rng);
+      // Pebbles
+      const dtPeb = 1 + (v % 3);
+      for (let i = 0; i < dtPeb; i++) {
+        c.fillStyle = ['#6a5e48','#5e5240','#625844'][Math.floor(rng() * 3)];
+        c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 3)), 2, 1);
+      }
+      // Occasional crack
+      if (v % 4 === 0) {
+        c.fillStyle = '#6a5838';
+        const dtCx = 3 + Math.floor(rng() * (s - 6));
+        const dtCy = 3 + Math.floor(rng() * (s - 6));
+        for (let i = 0; i < Math.max(3, Math.floor(s * 0.12)); i++) {
+          c.fillRect(dtCx + i, dtCy + Math.floor(rng() * 2), 1, 1);
+        }
+      }
       break;
     }
 
     // ===== STONE PATH =====
     case T.STONE_PATH: {
-      c.fillStyle = '#858585';
+      // Classic cobblestone grid pattern
+      c.fillStyle = '#5a5a5a';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#7a7a7a','#8a8a8a','#808080','#767676','#888888','#7e7e7e'], 0.65, rng);
-      // Mortar/grout lines (brick pattern)
-      c.fillStyle = '#606060';
-      const half = Math.floor(s/2);
-      c.fillRect(0, half-1, s, 2);
-      const isEven = v % 2 === 0;
-      if (isEven) {
-        c.fillRect(half-1, 0, 2, half);
-        c.fillRect(Math.floor(s*0.25)-1, half, 2, half);
-        c.fillRect(Math.floor(s*0.75)-1, half, 2, half);
-      } else {
-        c.fillRect(Math.floor(s*0.25)-1, 0, 2, half);
-        c.fillRect(Math.floor(s*0.75)-1, 0, 2, half);
-        c.fillRect(half-1, half, 2, half);
-      }
-      // Stone surface highlights
-      fillNoise(c, 1, 1, half-2, half-3, ['#949494','#9a9a9a'], 0.08, rng);
-      fillNoise(c, half+2, half+2, half-4, half-4, ['#929292','#989898'], 0.08, rng);
-      // Wear marks
-      fillNoise(c, 0, 0, s, s, ['#6e6e6e','#727272'], 0.04, rng);
-      // Moss in crevices
-      if (v % 4 === 0) {
-        c.fillStyle = '#5a7a4a';
-        c.fillRect(Math.floor(rng()*s), half-1, 3, 2);
+      const stClrs = ['#8a8a8a','#828282','#909090','#868686','#8e8e8e','#7e7e7e','#929292','#848484'];
+      const stRows = Math.max(3, Math.floor(s / 7));
+      const stRowH = Math.floor(s / stRows);
+      for (let row = 0; row < stRows; row++) {
+        const stRy = row * stRowH;
+        const stSh = stRowH - 1;
+        if (stRy + stSh > s) break;
+        const stOff = ((row + v) % 2 !== 0) ? Math.floor(s * 0.15) : 0;
+        const stNum = Math.max(2, Math.floor(s / 8));
+        const stBaseW = Math.floor(s / stNum);
+        let stCx = -stOff;
+        for (let si = 0; si <= stNum + 1; si++) {
+          const stSw = stBaseW + ((si + row) % 3 === 0 ? 2 : 0);
+          const stDx = Math.max(0, stCx);
+          const stDw = Math.min(stCx + stSw - 1, s) - stDx;
+          if (stDw > 0 && stSh > 0) {
+            const ci = ((row * 5 + si + v * 3) * 7) % stClrs.length;
+            c.fillStyle = stClrs[ci];
+            c.fillRect(stDx, stRy, stDw, stSh);
+            // Highlight top
+            c.fillStyle = '#9a9a9a';
+            c.fillRect(stDx, stRy, stDw, 1);
+            // Shadow bottom
+            c.fillStyle = '#6a6a6a';
+            c.fillRect(stDx, stRy + stSh - 1, stDw, 1);
+          }
+          stCx += stSw;
+        }
       }
       break;
     }
 
     // ===== STONE WALL =====
     case T.STONE_WALL: {
-      c.fillStyle = '#606060';
+      c.fillStyle = '#585858';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#585858','#666','#5c5c5c','#626262','#6a6a6a','#5e5e5e'], 0.65, rng);
-      // 3D top edge highlight
-      fillNoise(c, 0, 0, s, Math.floor(s*0.12), ['#808080','#888','#7a7a7a','#8e8e8e'], 0.6, rng);
-      // Mortar lines
-      c.fillStyle = '#4a4a4a';
-      const wh = Math.floor(s/2);
-      c.fillRect(0, wh-1, s, 2);
+      // Top highlight (3D)
+      c.fillStyle = '#707070';
+      c.fillRect(0, 0, s, Math.max(2, Math.floor(s * 0.08)));
+      // Mortar
+      c.fillStyle = '#464646';
+      const wh = Math.floor(s / 2);
+      c.fillRect(0, wh, s, 1);
+      // Brick pattern
       if (v % 2 === 0) {
-        c.fillRect(wh-1, 0, 2, wh);
-        c.fillRect(Math.floor(s*0.25)-1, wh, 2, wh);
-        c.fillRect(Math.floor(s*0.75)-1, wh, 2, wh);
+        c.fillRect(wh, 0, 1, wh);
+        c.fillRect(Math.floor(s * 0.25), wh + 1, 1, wh - 1);
+        c.fillRect(Math.floor(s * 0.75), wh + 1, 1, wh - 1);
       } else {
-        c.fillRect(Math.floor(s*0.25)-1, 0, 2, wh);
-        c.fillRect(Math.floor(s*0.75)-1, 0, 2, wh);
-        c.fillRect(wh-1, wh, 2, wh);
+        c.fillRect(Math.floor(s * 0.33), 0, 1, wh);
+        c.fillRect(Math.floor(s * 0.66), 0, 1, wh);
+        c.fillRect(wh, wh + 1, 1, wh - 1);
       }
-      // Dark bottom edge (3D)
-      fillNoise(c, 0, s-3, s, 3, ['#3a3a3a','#444','#3e3e3e'], 0.6, rng);
-      c.fillStyle = '#3a3a3a';
-      c.fillRect(s-1, 0, 1, s);
-      // Stone individual texture per brick
-      fillNoise(c, 2, 2, wh-4, wh-4, ['#727272','#6c6c6c'], 0.06, rng);
-      // Moss/damage
-      if (v % 3 === 0) {
-        fillNoise(c, 0, Math.floor(s*0.8), Math.floor(s*0.3), Math.floor(s*0.15), ['#4a604a','#3a5a3a'], 0.3, rng);
+      // Stone texture (scaled)
+      const swP = Math.floor(s * s / 120);
+      for (let i = 0; i < swP; i++) {
+        c.fillStyle = ['#646464','#5c5c5c','#6a6a6a'][Math.floor(rng() * 3)];
+        c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 3)), 1, 1);
       }
+      // Dark bottom/right edge
+      c.fillStyle = '#383838';
+      c.fillRect(0, s - 1, s, 1);
+      c.fillRect(s - 1, 0, 1, s);
       break;
     }
 
@@ -624,49 +633,51 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.CHURCH_WALL: {
       c.fillStyle = '#6a6058';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#625a50','#6e6660','#685e56','#726a62','#5e5650','#6c6460'], 0.65, rng);
-      // Top highlight
-      fillNoise(c, 0, 0, s, Math.floor(s*0.12), ['#868078','#8a847c','#7e7870'], 0.55, rng);
-      // Mortar
+      c.fillStyle = '#7a7068';
+      c.fillRect(0, 0, s, Math.max(2, Math.floor(s * 0.08)));
       c.fillStyle = '#504840';
-      const cwh = Math.floor(s/2);
-      c.fillRect(0, cwh-1, s, 2);
-      if (v%2===0) { c.fillRect(cwh-1,0,2,cwh); c.fillRect(Math.floor(s*0.25)-1,cwh,2,cwh); c.fillRect(Math.floor(s*0.75)-1,cwh,2,cwh); }
-      else { c.fillRect(Math.floor(s*0.25)-1,0,2,cwh); c.fillRect(Math.floor(s*0.75)-1,0,2,cwh); c.fillRect(cwh-1,cwh,2,cwh); }
-      // Dark bottom
-      fillNoise(c, 0, s-3, s, 3, ['#3e3830','#443e38'], 0.5, rng);
-      // Warm accent
-      fillNoise(c, 0, 0, s, s, ['#7a705e','#82786a'], 0.04, rng);
+      const cwh = Math.floor(s / 2);
+      c.fillRect(0, cwh, s, 1);
+      if (v % 2 === 0) { c.fillRect(cwh, 0, 1, cwh); c.fillRect(Math.floor(s * 0.25), cwh + 1, 1, cwh - 1); c.fillRect(Math.floor(s * 0.75), cwh + 1, 1, cwh - 1); }
+      else { c.fillRect(Math.floor(s * 0.33), 0, 1, cwh); c.fillRect(Math.floor(s * 0.66), 0, 1, cwh); c.fillRect(cwh, cwh + 1, 1, cwh - 1); }
+      // Texture
+      const cwTP = Math.floor(s * s / 120);
+      for (let i = 0; i < cwTP; i++) {
+        c.fillStyle = ['#625848','#6e6454','#5e5444'][Math.floor(rng() * 3)];
+        c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 3)), 1, 1);
+      }
+      c.fillStyle = '#3e3830';
+      c.fillRect(0, s - 1, s, 1);
+      c.fillRect(s - 1, 0, 1, s);
       break;
     }
 
     // ===== WINDOW STONE =====
     case T.WINDOW_STONE: {
-      // Wall base
-      c.fillStyle = '#606060';
+      c.fillStyle = '#585858';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#585858','#666','#5c5c5c','#626262'], 0.5, rng);
-      // Frame
-      c.fillStyle = '#3a2a18';
-      const fw = Math.floor(s*0.65), fh = Math.floor(s*0.7);
-      const fx = Math.floor(s*0.17), fy = Math.floor(s*0.12);
-      c.fillRect(fx, fy, fw, fh);
-      // Glass panes (4 sections)
-      const gw = Math.floor(fw*0.42), gh = Math.floor(fh*0.42);
-      const gx1 = fx+3, gy1 = fy+3;
-      const gx2 = fx+fw-gw-2, gy2 = fy+fh-gh-2;
-      for (const [gx,gy] of [[gx1,gy1],[gx2,gy1],[gx1,gy2],[gx2,gy2]]) {
-        c.fillStyle = '#4a80b8';
-        c.fillRect(gx, gy, gw, gh);
-        fillNoise(c, gx, gy, gw, gh, ['#5090c8','#4888c0','#5a98d0','#4280b0'], 0.35, rng);
-        // Reflection
-        c.fillStyle = 'rgba(180,220,255,0.25)';
-        c.fillRect(gx+1, gy+1, Math.floor(gw*0.4), Math.floor(gh*0.3));
+      // Wall texture
+      const wsTP = Math.floor(s * s / 120);
+      for (let i = 0; i < wsTP; i++) {
+        c.fillStyle = ['#505050','#606060','#565656'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
       }
-      // Cross frame
+      // Window frame (scaled)
+      const wsFW = Math.floor(s * 0.6), wsFH = Math.floor(s * 0.65);
+      const wsFX = Math.floor(s * 0.2), wsFY = Math.floor(s * 0.12);
       c.fillStyle = '#3a2a18';
-      c.fillRect(fx+Math.floor(fw*0.45), fy, Math.floor(fw*0.1), fh);
-      c.fillRect(fx, fy+Math.floor(fh*0.45), fw, Math.floor(fh*0.1));
+      c.fillRect(wsFX, wsFY, wsFW, wsFH);
+      // Glass
+      c.fillStyle = '#4a80b8';
+      c.fillRect(wsFX + 2, wsFY + 2, wsFW - 4, wsFH - 4);
+      // Reflection
+      c.fillStyle = '#6aa0d0';
+      c.fillRect(wsFX + 2, wsFY + 2, Math.floor(wsFW * 0.35), Math.floor(wsFH * 0.3));
+      // Cross frame (scaled)
+      const wsFrW = Math.max(2, Math.floor(s * 0.06));
+      c.fillStyle = '#3a2a18';
+      c.fillRect(wsFX + Math.floor(wsFW * 0.45), wsFY, wsFrW, wsFH);
+      c.fillRect(wsFX, wsFY + Math.floor(wsFH * 0.45), wsFW, wsFrW);
       break;
     }
 
@@ -674,115 +685,119 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.WINDOW_WOOD: {
       c.fillStyle = '#6a4828';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#604020','#6e4c2c','#5a3a1a','#725030'], 0.5, rng);
-      // Wood grain
-      c.fillStyle = '#5a3818';
-      c.fillRect(Math.floor(s*0.33), 0, 1, s);
-      c.fillRect(Math.floor(s*0.66), 0, 1, s);
-      // Frame
-      c.fillStyle = '#3a2010';
-      const wfw = Math.floor(s*0.65), wfh = Math.floor(s*0.7);
-      const wfx = Math.floor(s*0.17), wfy = Math.floor(s*0.12);
-      c.fillRect(wfx, wfy, wfw, wfh);
-      // Glass with warm light
-      const wgw = Math.floor(wfw*0.42), wgh = Math.floor(wfh*0.42);
-      for (const [gx,gy] of [[wfx+3,wfy+3],[wfx+wfw-wgw-2,wfy+3],[wfx+3,wfy+wfh-wgh-2],[wfx+wfw-wgw-2,wfy+wfh-wgh-2]]) {
-        c.fillStyle = '#6a9ac8';
-        c.fillRect(gx, gy, wgw, wgh);
-        fillNoise(c, gx, gy, wgw, wgh, ['#70a0d0','#78a8d8','#6898c0'], 0.3, rng);
-        c.fillStyle = 'rgba(255,240,200,0.15)';
-        c.fillRect(gx, gy+Math.floor(wgh*0.5), wgw, Math.floor(wgh*0.5));
+      // Wood texture
+      const wwTP = Math.floor(s * s / 100);
+      for (let i = 0; i < wwTP; i++) {
+        c.fillStyle = ['#5a3818','#704020','#624020'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.3 ? 2 : 1, 1);
       }
+      // Frame
+      const wwFW = Math.floor(s * 0.6), wwFH = Math.floor(s * 0.65);
+      const wwFX = Math.floor(s * 0.2), wwFY = Math.floor(s * 0.12);
       c.fillStyle = '#3a2010';
-      c.fillRect(wfx+Math.floor(wfw*0.45), wfy, Math.floor(wfw*0.1), wfh);
-      c.fillRect(wfx, wfy+Math.floor(wfh*0.45), wfw, Math.floor(wfh*0.1));
+      c.fillRect(wwFX, wwFY, wwFW, wwFH);
+      c.fillStyle = '#6a9ac8';
+      c.fillRect(wwFX + 2, wwFY + 2, wwFW - 4, wwFH - 4);
+      c.fillStyle = '#80aad8';
+      c.fillRect(wwFX + 2, wwFY + 2, Math.floor(wwFW * 0.35), Math.floor(wwFH * 0.3));
+      // Cross frame (scaled)
+      const wwFrW = Math.max(2, Math.floor(s * 0.06));
+      c.fillStyle = '#3a2010';
+      c.fillRect(wwFX + Math.floor(wwFW * 0.45), wwFY, wwFrW, wwFH);
+      c.fillRect(wwFX, wwFY + Math.floor(wwFH * 0.45), wwFW, wwFrW);
       break;
     }
 
     // ===== TORCH WALL =====
     case T.TORCH_WALL: {
-      c.fillStyle = '#606060';
+      c.fillStyle = '#585858';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#585858','#666','#5c5c5c','#626262'], 0.5, rng);
-      // Bracket
+      // Wall texture
+      const twP = Math.floor(s * s / 120);
+      for (let i = 0; i < twP; i++) {
+        c.fillStyle = ['#505050','#606060','#565656'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      // Bracket (scaled)
+      const twBW = Math.max(2, Math.floor(s * 0.06));
       c.fillStyle = '#444';
-      c.fillRect(Math.floor(s*0.44), Math.floor(s*0.42), Math.floor(s*0.12), Math.floor(s*0.4));
+      c.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.42), twBW, Math.floor(s * 0.38));
       // Handle
       c.fillStyle = '#4a3018';
-      c.fillRect(Math.floor(s*0.4), Math.floor(s*0.35), Math.floor(s*0.2), Math.floor(s*0.1));
-      fillNoise(c, Math.floor(s*0.4), Math.floor(s*0.35), Math.floor(s*0.2), Math.floor(s*0.1), ['#5a4028','#3a2010'], 0.3, rng);
-      // Flame layers
-      c.fillStyle = '#cc3300';
-      c.fillRect(Math.floor(s*0.35), Math.floor(s*0.15), Math.floor(s*0.3), Math.floor(s*0.22));
+      c.fillRect(Math.floor(s * 0.36), Math.floor(s * 0.36), Math.floor(s * 0.28), twBW);
+      // Flame
       c.fillStyle = '#ff6600';
-      c.fillRect(Math.floor(s*0.38), Math.floor(s*0.18), Math.floor(s*0.24), Math.floor(s*0.16));
-      c.fillStyle = '#ff9900';
-      c.fillRect(Math.floor(s*0.42), Math.floor(s*0.2), Math.floor(s*0.16), Math.floor(s*0.12));
+      c.fillRect(Math.floor(s * 0.34), Math.floor(s * 0.16), Math.floor(s * 0.32), Math.floor(s * 0.22));
       c.fillStyle = '#ffcc00';
-      c.fillRect(Math.floor(s*0.45), Math.floor(s*0.22), Math.floor(s*0.1), Math.floor(s*0.08));
+      c.fillRect(Math.floor(s * 0.38), Math.floor(s * 0.2), Math.floor(s * 0.24), Math.floor(s * 0.14));
       c.fillStyle = '#fff8e0';
-      c.fillRect(Math.floor(s*0.47), Math.floor(s*0.24), Math.floor(s*0.06), Math.floor(s*0.04));
-      // Flame noise
-      fillNoise(c, Math.floor(s*0.35), Math.floor(s*0.12), Math.floor(s*0.3), Math.floor(s*0.1), ['#ff4400','#ff8800'], 0.2, rng);
+      c.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.24), Math.floor(s * 0.16), Math.floor(s * 0.08));
       // Glow
-      c.fillStyle = 'rgba(255,140,30,0.12)';
+      c.fillStyle = 'rgba(255,140,30,0.08)';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, Math.floor(s*0.5), ['rgba(255,100,0,0.06)','rgba(255,150,50,0.06)'], 0.1, rng);
       break;
     }
 
     // ===== TREE =====
     case T.TREE: {
-      // Grass base
-      c.fillStyle = '#3a7a2d';
+      // Grass background
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#2e6a22','#3e8232'], 0.45, rng);
-      // Ground shadow
-      c.fillStyle = 'rgba(0,0,0,0.22)';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.72), Math.floor(s*0.84), Math.floor(s*0.2));
-      // Roots
-      c.fillStyle = '#4a3018';
-      for (let i = 0; i < 3; i++) {
-        const rx = Math.floor(s*0.3) + Math.floor(rng()*s*0.2);
-        c.fillRect(rx, Math.floor(s*0.72), Math.floor(rng()*s*0.3)+3, 3);
+      const trGP = Math.floor(s * s / 80);
+      for (let i = 0; i < trGP; i++) {
+        c.fillStyle = ['#367628','#3e7e30','#347224'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
       }
+      // Ground shadow
+      c.fillStyle = 'rgba(0,0,0,0.15)';
+      const trShY = Math.floor(s * 0.68);
+      c.fillRect(Math.floor(s * 0.08), trShY, Math.floor(s * 0.84), Math.max(3, Math.floor(s * 0.12)));
+      c.fillStyle = 'rgba(0,0,0,0.08)';
+      c.fillRect(Math.floor(s * 0.05), trShY - 1, Math.floor(s * 0.9), Math.max(4, Math.floor(s * 0.15)));
       // Trunk
-      const tw = Math.floor(s*0.28), th = Math.floor(s*0.42);
-      const ttx = Math.floor(s*0.36), tty = Math.floor(s*0.38);
-      c.fillStyle = '#4a3018';
-      c.fillRect(ttx, tty, tw, th);
-      // Bark texture
-      fillNoise(c, ttx, tty, tw, th, ['#3a2008','#5a4020','#4a3518','#3e2810','#583c1c','#422a0e'], 0.65, rng);
-      // Bark highlight (left side)
-      fillNoise(c, ttx, tty, Math.floor(tw*0.3), th, ['#6a5030','#5e4428'], 0.2, rng);
-      // Bark dark (right side)
-      fillNoise(c, ttx+Math.floor(tw*0.7), tty, Math.floor(tw*0.3), th, ['#2a1808','#301e0a'], 0.25, rng);
-      // Canopy - multi-layered
-      const cx = Math.floor(s*0.06), cy = Math.floor(s*0.04);
-      const cww = Math.floor(s*0.88), chh = Math.floor(s*0.5);
-      // Canopy dark base
-      c.fillStyle = '#0e3a08';
-      c.fillRect(cx+2, cy+4, cww-4, chh-4);
-      c.fillRect(cx+Math.floor(s*0.06), cy, cww-Math.floor(s*0.12), chh);
-      // Leaf texture
-      fillNoise(c, cx, cy, cww, chh, [
-        '#145008','#1a5c0e','#104a06','#186012','#0e4206',
-        '#1c6214','#124c08','#166010','#1e6818'
-      ], 0.7, rng);
-      // Mid highlights
-      fillNoise(c, cx+2, cy+2, cww-4, Math.floor(chh*0.5), [
-        '#2a7820','#267420','#2e7e24','#228020'
-      ], 0.2, rng);
-      // Top highlights (light comes from top)
-      fillNoise(c, cx+4, cy, cww-8, Math.floor(chh*0.25), [
-        '#3a8a2e','#3e9032','#429436','#369028'
-      ], 0.25, rng);
-      // Bright leaf spots
-      fillNoise(c, cx, cy, cww, chh, ['#4aa040','#50a846','#46983c'], 0.04, rng);
-      // Shadow at bottom of canopy
-      fillNoise(c, cx+4, cy+Math.floor(chh*0.8), cww-8, Math.floor(chh*0.2), [
-        '#083006','#0a3408','#062c04'
-      ], 0.35, rng);
+      const trW = Math.max(4, Math.floor(s * 0.18));
+      const trH = Math.floor(s * 0.35);
+      const trX = Math.floor(s * 0.41), trY = Math.floor(s * 0.42);
+      c.fillStyle = '#5a3818';
+      c.fillRect(trX, trY, trW, trH);
+      c.fillStyle = '#6a4828';
+      c.fillRect(trX, trY, Math.floor(trW * 0.5), trH);
+      c.fillStyle = '#4a2810';
+      c.fillRect(trX + trW - 1, trY, 1, trH);
+      // Bark detail
+      c.fillStyle = '#503010';
+      for (let i = 0; i < Math.floor(trH / 4); i++) {
+        c.fillRect(trX + 1, trY + 2 + i * 4, trW - 2, 1);
+      }
+      // Canopy - large rounded shape with layered green shading
+      const canI = Math.max(3, Math.floor(s * 0.1));
+      const canX = Math.floor(s * 0.05), canY = Math.floor(s * 0.02);
+      const canW = Math.floor(s * 0.9), canH = Math.floor(s * 0.52);
+      // Darkest outer layer (rounded)
+      c.fillStyle = '#1a5c0e';
+      c.fillRect(canX + canI, canY, canW - canI * 2, canH);
+      c.fillRect(canX + 1, canY + canI, canW - 2, canH - canI * 2);
+      c.fillRect(canX, canY + canI + 1, canW, canH - canI * 2 - 2);
+      // Medium green middle
+      c.fillStyle = '#226e14';
+      c.fillRect(canX + canI + 1, canY + 2, canW - canI * 2 - 2, canH - 4);
+      c.fillRect(canX + 3, canY + canI + 1, canW - 6, canH - canI * 2 - 2);
+      // Lighter green upper area
+      c.fillStyle = '#2e7e1e';
+      c.fillRect(canX + canI + 2, canY + 2, canW - canI * 2 - 4, Math.floor(canH * 0.4));
+      // Brightest highlight crown
+      c.fillStyle = '#3a8e2a';
+      c.fillRect(canX + canI + 4, canY + 1, canW - canI * 2 - 8, Math.floor(canH * 0.2));
+      // Bottom shadow of canopy
+      c.fillStyle = '#0e4208';
+      c.fillRect(canX + 3, canY + canH - Math.max(2, Math.floor(s * 0.06)), canW - 6, Math.max(2, Math.floor(s * 0.06)));
+      // Leaf texture detail
+      for (let i = 0; i < Math.floor(s / 5); i++) {
+        c.fillStyle = rng() < 0.5 ? '#0e420a' : '#2e7c1c';
+        c.fillRect(canX + canI + Math.floor(rng() * (canW - canI * 2)),
+          canY + 2 + Math.floor(rng() * (canH - 4)), 1, 1);
+      }
       break;
     }
 
@@ -790,127 +805,104 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.WOOD_FLOOR: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, [
-        '#8a5828','#9a6838','#a07040','#8e5c2c','#946230',
-        '#885424','#9c6c3c','#926034'
-      ], 0.65, rng);
+      // Plank count scales with tile size
+      const wfNP = Math.max(3, Math.floor(s / 7));
       // Plank gaps
-      c.fillStyle = '#5a3818';
-      const nPlanks = 4;
-      for (let i = 1; i < nPlanks; i++) {
-        c.fillRect(0, Math.floor(i*s/nPlanks)-1, s, 2);
+      c.fillStyle = '#6a4020';
+      for (let i = 1; i < wfNP; i++) {
+        c.fillRect(0, Math.floor(i * s / wfNP), s, 1);
       }
-      // Board end offsets
-      c.fillStyle = '#5a3818';
-      for (let i = 0; i < nPlanks; i++) {
-        const ox = Math.floor(rng()*s*0.6)+Math.floor(s*0.2);
-        c.fillRect(ox, Math.floor(i*s/nPlanks), 1, Math.floor(s/nPlanks));
+      // Board end offsets per plank
+      for (let i = 0; i < wfNP; i++) {
+        const wfOx = Math.floor(rng() * s * 0.5) + Math.floor(s * 0.2);
+        c.fillRect(wfOx, Math.floor(i * s / wfNP) + 1, 1, Math.floor(s / wfNP) - 1);
       }
-      // Wood grain (horizontal lines in each plank)
-      c.fillStyle = '#7a4820';
-      for (let i = 0; i < nPlanks; i++) {
-        const py = Math.floor(i*s/nPlanks)+2;
-        const ph = Math.floor(s/nPlanks)-3;
-        for (let j = 0; j < 2; j++) {
-          const gy = py + Math.floor(rng()*ph);
-          c.fillRect(0, gy, s, 1);
-          c.globalAlpha = 0.5;
-          c.fillRect(0, gy, s, 1);
-          c.globalAlpha = 1;
-        }
+      // Grain texture (scaled)
+      const wfP = Math.floor(s * s / 80);
+      for (let i = 0; i < wfP; i++) {
+        c.fillStyle = ['#8a5828','#a07040','#946030'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.4 ? 2 : 1, 1);
       }
-      // Highlights
-      fillNoise(c, 0, 0, s, s, ['#b08050','#a87848'], 0.04, rng);
-      // Knots
-      if (v%3===0) {
-        const kx = Math.floor(rng()*s*0.7)+Math.floor(s*0.15), ky = Math.floor(rng()*s*0.7)+Math.floor(s*0.15);
-        c.fillStyle = '#6a3818';
-        c.fillRect(kx, ky, 3, 3);
-        c.fillStyle = '#5a2810';
-        c.fillRect(kx+1, ky+1, 1, 1);
+      // Optional knot
+      if (v % 3 === 0) {
+        c.fillStyle = '#6a4020';
+        const wfKx = 2 + Math.floor(rng() * (s - 4));
+        const wfKy = 2 + Math.floor(rng() * (s - 4));
+        c.fillRect(wfKx, wfKy, 2, 2);
+        c.fillStyle = '#7a5028';
+        c.fillRect(wfKx, wfKy, 1, 1);
       }
       break;
     }
 
     // ===== CHURCH FLOOR =====
     case T.CHURCH_FLOOR: {
-      // Marble tiles checkerboard
       if (v % 2 === 0) {
         c.fillStyle = '#d8d0b8';
         c.fillRect(0, 0, s, s);
-        fillNoise(c, 0, 0, s, s, ['#d0c8b0','#dcd4bc','#d4ccb4','#e0d8c0'], 0.5, rng);
-        // Marble veins
-        c.fillStyle = '#c0b8a0';
-        for (let i = 0; i < 3; i++) {
-          const vy = Math.floor(rng()*s), vx = Math.floor(rng()*s*0.3);
-          for (let px = vx; px < s; px++) {
-            c.fillRect(px, vy + Math.floor(Math.sin(px*0.3)*2), 1, 1);
-            if (rng() > 0.7) vy + 1;
-          }
+        const cf1P = Math.floor(s * s / 80);
+        for (let i = 0; i < cf1P; i++) {
+          c.fillStyle = ['#d0c8b0','#dcd4bc','#d4ccb4'][Math.floor(rng() * 3)];
+          c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.3 ? 2 : 1, 1);
         }
       } else {
         c.fillStyle = '#b8b098';
         c.fillRect(0, 0, s, s);
-        fillNoise(c, 0, 0, s, s, ['#b0a890','#bcb49c','#b4ac94','#c0b8a0'], 0.5, rng);
+        const cf2P = Math.floor(s * s / 80);
+        for (let i = 0; i < cf2P; i++) {
+          c.fillStyle = ['#b0a890','#bcb49c','#b4ac94'][Math.floor(rng() * 3)];
+          c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.3 ? 2 : 1, 1);
+        }
       }
-      // Tile border
+      // Border lines
       c.fillStyle = '#9a9280';
       c.fillRect(0, 0, s, 1); c.fillRect(0, 0, 1, s);
-      c.fillRect(s-1, 0, 1, s); c.fillRect(0, s-1, s, 1);
+      c.fillRect(s - 1, 0, 1, s); c.fillRect(0, s - 1, s, 1);
       break;
     }
 
     // ===== RED CARPET =====
     case T.RED_CARPET: {
-      // Floor base
-      c.fillStyle = '#d0c8b0';
-      c.fillRect(0, 0, s, s);
-      // Carpet
       c.fillStyle = '#7a1515';
-      c.fillRect(Math.floor(s*0.05), 0, Math.floor(s*0.9), s);
-      fillNoise(c, Math.floor(s*0.05), 0, Math.floor(s*0.9), s, [
-        '#701010','#7a1515','#841a1a','#6a0e0e','#801818'
-      ], 0.55, rng);
-      // Gold borders
+      c.fillRect(0, 0, s, s);
+      const rcP = Math.floor(s * s / 80);
+      for (let i = 0; i < rcP; i++) {
+        c.fillStyle = ['#701010','#841a1a','#781414'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Gold borders (scaled)
+      const rcBW = Math.max(2, Math.floor(s * 0.06));
       c.fillStyle = '#d4a040';
-      c.fillRect(Math.floor(s*0.05), 0, 2, s);
-      c.fillRect(Math.floor(s*0.9)+1, 0, 2, s);
-      fillNoise(c, Math.floor(s*0.05), 0, 2, s, ['#c89838','#dca848'], 0.3, rng);
-      fillNoise(c, Math.floor(s*0.9)+1, 0, 2, s, ['#c89838','#dca848'], 0.3, rng);
-      // Inner pattern
-      c.fillStyle = '#901818';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.12), Math.floor(s*0.76), Math.floor(s*0.76));
-      // Gold inner border
+      c.fillRect(0, 0, rcBW, s); c.fillRect(s - rcBW, 0, rcBW, s);
+      // Inner line
       c.fillStyle = '#c89838';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.12), Math.floor(s*0.76), 1);
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.86), Math.floor(s*0.76), 1);
+      c.fillRect(rcBW + 1, rcBW + 1, s - rcBW * 2 - 2, 1);
+      c.fillRect(rcBW + 1, s - rcBW - 2, s - rcBW * 2 - 2, 1);
       break;
     }
 
     // ===== ALTAR =====
     case T.ALTAR: {
-      // Floor
       c.fillStyle = '#d0c8b0';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#c8c0a8','#d4ccb4'], 0.3, rng);
       // Altar body
       c.fillStyle = '#d8d8d8';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.3), Math.floor(s*0.84), Math.floor(s*0.62));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.3), Math.floor(s*0.84), Math.floor(s*0.62), ['#d0d0d0','#e0e0e0','#dcdcdc','#cccccc'], 0.4, rng);
-      // Top surface
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.3), Math.floor(s*0.84), Math.floor(s*0.1), ['#eaeaea','#f0f0f0','#e4e4e4'], 0.5, rng);
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.3), Math.floor(s * 0.8), Math.floor(s * 0.6));
+      c.fillStyle = '#eaeaea';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.3), Math.floor(s * 0.8), Math.max(2, Math.floor(s * 0.06)));
       // Gold trim
       c.fillStyle = '#d4a040';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.29), Math.floor(s*0.84), 2);
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.9), Math.floor(s*0.84), 2);
-      // Candles
-      for (const cx of [s*0.18, s*0.74]) {
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.28), Math.floor(s * 0.8), Math.max(1, Math.floor(s * 0.03)));
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.88), Math.floor(s * 0.8), Math.max(1, Math.floor(s * 0.03)));
+      // Candles (scaled)
+      const alCW = Math.max(2, Math.floor(s * 0.07));
+      for (const acx of [s * 0.18, s * 0.72]) {
         c.fillStyle = '#f0e8c0';
-        c.fillRect(Math.floor(cx), Math.floor(s*0.12), Math.floor(s*0.08), Math.floor(s*0.2));
-        c.fillStyle = '#ff8800';
-        c.fillRect(Math.floor(cx)+1, Math.floor(s*0.06), Math.floor(s*0.06), Math.floor(s*0.08));
+        c.fillRect(Math.floor(acx), Math.floor(s * 0.12), alCW, Math.floor(s * 0.2));
         c.fillStyle = '#ffcc00';
-        c.fillRect(Math.floor(cx)+2, Math.floor(s*0.08), Math.floor(s*0.04), Math.floor(s*0.04));
+        c.fillRect(Math.floor(acx), Math.floor(s * 0.08), alCW, Math.max(3, Math.floor(s * 0.08)));
+        c.fillStyle = '#fff8e0';
+        c.fillRect(Math.floor(acx) + 1, Math.floor(s * 0.09), alCW - 2, Math.max(1, Math.floor(s * 0.04)));
       }
       break;
     }
@@ -919,21 +911,13 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.CROSS: {
       c.fillStyle = '#d0c8b0';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#c8c0a8','#d4ccb4'], 0.3, rng);
-      // Golden cross
+      const crW = Math.max(2, Math.floor(s * 0.07));
       c.fillStyle = '#d4a040';
-      const crw = Math.floor(s*0.16), crh = Math.floor(s*0.82);
-      c.fillRect(Math.floor(s*0.42), Math.floor(s*0.05), crw, crh);
-      c.fillRect(Math.floor(s*0.2), Math.floor(s*0.18), Math.floor(s*0.6), Math.floor(s*0.16));
-      fillNoise(c, Math.floor(s*0.42), Math.floor(s*0.05), crw, crh, ['#c89838','#dca848','#d0a040'], 0.3, rng);
-      // Highlight
+      c.fillRect(Math.floor(s * 0.46) - Math.floor(crW / 2), Math.floor(s * 0.06), crW, Math.floor(s * 0.82));
+      c.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.18), Math.floor(s * 0.56), crW);
       c.fillStyle = '#e4b858';
-      c.fillRect(Math.floor(s*0.42), Math.floor(s*0.05), crw, 2);
-      c.fillRect(Math.floor(s*0.2), Math.floor(s*0.18), Math.floor(s*0.6), 2);
-      // Shadow
-      c.fillStyle = '#a07828';
-      c.fillRect(Math.floor(s*0.42), Math.floor(s*0.05)+crh-2, crw, 2);
-      c.fillRect(Math.floor(s*0.56), Math.floor(s*0.18), 2, Math.floor(s*0.16));
+      c.fillRect(Math.floor(s * 0.46) - Math.floor(crW / 2), Math.floor(s * 0.06), crW, 1);
+      c.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.18), Math.floor(s * 0.56), 1);
       break;
     }
 
@@ -941,22 +925,20 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.CHURCH_PEW: {
       c.fillStyle = '#d0c8b0';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#c8c0a8','#d4ccb4'], 0.25, rng);
-      c.fillStyle = '#9a9280'; c.fillRect(0,0,s,1); c.fillRect(0,0,1,s);
+      c.fillStyle = '#9a9280'; c.fillRect(0, 0, s, 1); c.fillRect(0, 0, 1, s);
       // Bench
       c.fillStyle = '#4a2510';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.25), Math.floor(s*0.84), Math.floor(s*0.55));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.25), Math.floor(s*0.84), Math.floor(s*0.55), ['#3a1808','#5a3520','#4e2c18','#3e1c0a'], 0.5, rng);
-      // Top rail
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.25), Math.floor(s*0.84), Math.floor(s*0.08), ['#6a4828','#5e3c1c'], 0.4, rng);
-      // Back rest
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.3), Math.floor(s * 0.8), Math.floor(s * 0.45));
       c.fillStyle = '#603818';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.12), Math.floor(s*0.84), Math.floor(s*0.15));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.12), Math.floor(s*0.84), Math.floor(s*0.15), ['#6a4020','#5a3418'], 0.3, rng);
-      // Legs
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.15), Math.floor(s * 0.8), Math.floor(s * 0.17));
+      // Highlight
+      c.fillStyle = '#704828';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.15), Math.floor(s * 0.8), Math.max(2, Math.floor(s * 0.06)));
+      // Legs (scaled)
+      const cpLW = Math.max(2, Math.floor(s * 0.07));
       c.fillStyle = '#3a1808';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.72), Math.floor(s*0.06), Math.floor(s*0.14));
-      c.fillRect(Math.floor(s*0.82), Math.floor(s*0.72), Math.floor(s*0.06), Math.floor(s*0.14));
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.75), cpLW, Math.floor(s * 0.14));
+      c.fillRect(Math.floor(s * 0.82) - cpLW + 2, Math.floor(s * 0.75), cpLW, Math.floor(s * 0.14));
       break;
     }
 
@@ -964,23 +946,24 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.ANVIL: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838','#a07040'], 0.4, rng);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.18)';
-      c.fillRect(Math.floor(s*0.15), Math.floor(s*0.78), Math.floor(s*0.7), Math.floor(s*0.12));
+      const avP = Math.floor(s * s / 80);
+      for (let i = 0; i < avP; i++) {
+        c.fillStyle = ['#8a5828','#a07040','#946030'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.4 ? 2 : 1, 1);
+      }
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      c.fillRect(Math.floor(s * 0.16), Math.floor(s * 0.78), Math.floor(s * 0.68), Math.max(2, Math.floor(s * 0.06)));
       // Base
       c.fillStyle = '#333';
-      c.fillRect(Math.floor(s*0.25), Math.floor(s*0.6), Math.floor(s*0.5), Math.floor(s*0.25));
-      fillNoise(c, Math.floor(s*0.25), Math.floor(s*0.6), Math.floor(s*0.5), Math.floor(s*0.25), ['#2a2a2a','#3a3a3a','#303030'], 0.4, rng);
-      // Top
-      c.fillStyle = '#444';
-      c.fillRect(Math.floor(s*0.1), Math.floor(s*0.38), Math.floor(s*0.8), Math.floor(s*0.24));
-      fillNoise(c, Math.floor(s*0.1), Math.floor(s*0.38), Math.floor(s*0.8), Math.floor(s*0.24), ['#3a3a3a','#4a4a4a','#404040','#505050'], 0.5, rng);
-      // Surface highlight
-      fillNoise(c, Math.floor(s*0.12), Math.floor(s*0.38), Math.floor(s*0.76), Math.floor(s*0.06), ['#606060','#6a6a6a','#585858'], 0.6, rng);
+      c.fillRect(Math.floor(s * 0.26), Math.floor(s * 0.58), Math.floor(s * 0.48), Math.floor(s * 0.24));
+      // Top (anvil surface)
+      c.fillStyle = '#4a4a4a';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.38), Math.floor(s * 0.8), Math.floor(s * 0.22));
+      c.fillStyle = '#606060';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.38), Math.floor(s * 0.8), Math.max(2, Math.floor(s * 0.06)));
       // Horn
       c.fillStyle = '#484848';
-      c.fillRect(Math.floor(s*0.04), Math.floor(s*0.42), Math.floor(s*0.08), Math.floor(s*0.14));
+      c.fillRect(Math.floor(s * 0.04), Math.floor(s * 0.42), Math.floor(s * 0.1), Math.floor(s * 0.14));
       break;
     }
 
@@ -988,27 +971,21 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.FURNACE: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838'], 0.3, rng);
-      // Furnace body
+      // Body
       c.fillStyle = '#3a2828';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.06), Math.floor(s*0.84), Math.floor(s*0.88));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.06), Math.floor(s*0.84), Math.floor(s*0.88), ['#342424','#3e2c2c','#2e2020','#402e2e','#382828'], 0.55, rng);
-      // Stone frame
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.06), Math.floor(s*0.84), Math.floor(s*0.08), ['#4a3838','#524040','#463636'], 0.5, rng);
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.06), Math.floor(s*0.08), Math.floor(s*0.88), ['#4a3838','#524040'], 0.5, rng);
-      fillNoise(c, Math.floor(s*0.84), Math.floor(s*0.06), Math.floor(s*0.08), Math.floor(s*0.88), ['#4a3838','#524040'], 0.5, rng);
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.08), Math.floor(s * 0.8), Math.floor(s * 0.84));
+      c.fillStyle = '#4a3838';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.08), Math.floor(s * 0.8), 2);
       // Fire opening
       c.fillStyle = '#141414';
-      c.fillRect(Math.floor(s*0.22), Math.floor(s*0.42), Math.floor(s*0.56), Math.floor(s*0.42));
+      c.fillRect(Math.floor(s * 0.24), Math.floor(s * 0.45), Math.floor(s * 0.52), Math.floor(s * 0.38));
       // Fire
-      c.fillStyle = '#aa2200';
-      c.fillRect(Math.floor(s*0.26), Math.floor(s*0.56), Math.floor(s*0.48), Math.floor(s*0.24));
-      fillNoise(c, Math.floor(s*0.26), Math.floor(s*0.52), Math.floor(s*0.48), Math.floor(s*0.28), ['#cc3300','#ff4400','#dd4400','#aa2200'], 0.45, rng);
-      fillNoise(c, Math.floor(s*0.3), Math.floor(s*0.56), Math.floor(s*0.4), Math.floor(s*0.18), ['#ff6600','#ff8800','#ffaa00'], 0.4, rng);
-      fillNoise(c, Math.floor(s*0.35), Math.floor(s*0.58), Math.floor(s*0.3), Math.floor(s*0.12), ['#ffcc00','#ffdd44','#ffee66'], 0.35, rng);
-      // Glow
-      c.fillStyle = 'rgba(255,80,0,0.06)';
-      c.fillRect(0, 0, s, s);
+      c.fillStyle = '#cc3300';
+      c.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.58), Math.floor(s * 0.44), Math.floor(s * 0.2));
+      c.fillStyle = '#ff8800';
+      c.fillRect(Math.floor(s * 0.32), Math.floor(s * 0.6), Math.floor(s * 0.36), Math.floor(s * 0.14));
+      c.fillStyle = '#ffcc00';
+      c.fillRect(Math.floor(s * 0.38), Math.floor(s * 0.64), Math.floor(s * 0.24), Math.floor(s * 0.08));
       break;
     }
 
@@ -1016,31 +993,24 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.BOOKSHELF: {
       c.fillStyle = '#d0c8b0';
       c.fillRect(0, 0, s, s);
-      // Shelf frame
+      // Frame
       c.fillStyle = '#3a2008';
-      c.fillRect(Math.floor(s*0.06), Math.floor(s*0.04), Math.floor(s*0.88), Math.floor(s*0.92));
-      fillNoise(c, Math.floor(s*0.06), Math.floor(s*0.04), Math.floor(s*0.88), Math.floor(s*0.92), ['#2e1806','#3e2810','#34200a'], 0.4, rng);
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.06), Math.floor(s * 0.84), Math.floor(s * 0.88));
       // 3 shelves
-      for (const sy of [0.3, 0.58, 0.86]) {
+      for (const sy of [0.32, 0.58, 0.84]) {
         c.fillStyle = '#4a3018';
-        c.fillRect(Math.floor(s*0.06), Math.floor(s*sy), Math.floor(s*0.88), Math.floor(s*0.04));
+        c.fillRect(Math.floor(s * 0.08), Math.floor(s * sy), Math.floor(s * 0.84), 1);
       }
-      // Books in 3 rows
-      const bCol = ['#8b1818','#18408b','#186828','#8b6818','#681868','#186878','#8b3818','#2a5818'];
+      // Books
+      const bCol = ['#8b1818','#18408b','#186828','#8b6818','#681868'];
       for (let row = 0; row < 3; row++) {
-        const rowY = Math.floor(s * (0.06 + row * 0.28));
-        const rowH = Math.floor(s * 0.24);
-        let bx = Math.floor(s*0.1);
-        while (bx < s*0.9) {
-          const bw = Math.floor(rng()*3)+2;
-          c.fillStyle = bCol[Math.floor(rng()*bCol.length)];
+        const rowY = Math.floor(s * (0.08 + row * 0.26));
+        const rowH = Math.floor(s * 0.22);
+        let bx = Math.floor(s * 0.12);
+        while (bx < s * 0.88) {
+          const bw = Math.floor(rng() * 2) + 2;
+          c.fillStyle = bCol[Math.floor(rng() * bCol.length)];
           c.fillRect(bx, rowY, bw, rowH);
-          // Book spine line
-          c.fillStyle = 'rgba(0,0,0,0.15)';
-          c.fillRect(bx, rowY, 1, rowH);
-          // Book top highlight
-          c.fillStyle = 'rgba(255,255,255,0.1)';
-          c.fillRect(bx, rowY, bw, 1);
           bx += bw + 1;
         }
       }
@@ -1051,17 +1021,21 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.TABLE: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838','#a07040'], 0.4, rng);
-      // Table surface
+      const tbP = Math.floor(s * s / 80);
+      for (let i = 0; i < tbP; i++) {
+        c.fillStyle = ['#8a5828','#a07040','#946030'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.4 ? 2 : 1, 1);
+      }
+      // Surface
       c.fillStyle = '#6a4020';
-      c.fillRect(Math.floor(s*0.06), Math.floor(s*0.22), Math.floor(s*0.88), Math.floor(s*0.56));
-      fillNoise(c, Math.floor(s*0.06), Math.floor(s*0.22), Math.floor(s*0.88), Math.floor(s*0.56), ['#5a3018','#6a4020','#7a5030','#604020'], 0.55, rng);
-      // Top highlight
-      fillNoise(c, Math.floor(s*0.06), Math.floor(s*0.22), Math.floor(s*0.88), Math.floor(s*0.08), ['#8a6040','#7a5030','#946a48'], 0.5, rng);
-      // Legs
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.25), Math.floor(s * 0.84), Math.floor(s * 0.5));
+      c.fillStyle = '#7a5030';
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.25), Math.floor(s * 0.84), Math.max(2, Math.floor(s * 0.06)));
+      // Legs (scaled)
+      const tbLW = Math.max(2, Math.floor(s * 0.07));
       c.fillStyle = '#4a2810';
-      c.fillRect(Math.floor(s*0.1), Math.floor(s*0.78), Math.floor(s*0.08), Math.floor(s*0.18));
-      c.fillRect(Math.floor(s*0.82), Math.floor(s*0.78), Math.floor(s*0.08), Math.floor(s*0.18));
+      c.fillRect(Math.floor(s * 0.12), Math.floor(s * 0.78), tbLW, Math.floor(s * 0.18));
+      c.fillRect(Math.floor(s * 0.84) - tbLW + 2, Math.floor(s * 0.78), tbLW, Math.floor(s * 0.18));
       break;
     }
 
@@ -1069,23 +1043,24 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.CHAIR: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838'], 0.35, rng);
+      const chP = Math.floor(s * s / 80);
+      for (let i = 0; i < chP; i++) {
+        c.fillStyle = ['#8a5828','#a07040','#946030'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.4 ? 2 : 1, 1);
+      }
       // Back
       c.fillStyle = '#4a2510';
-      c.fillRect(Math.floor(s*0.2), Math.floor(s*0.1), Math.floor(s*0.6), Math.floor(s*0.32));
-      fillNoise(c, Math.floor(s*0.2), Math.floor(s*0.1), Math.floor(s*0.6), Math.floor(s*0.32), ['#3a1808','#5a3520','#4a2810'], 0.45, rng);
-      // Back slats
-      c.fillStyle = '#5a3520';
-      c.fillRect(Math.floor(s*0.25), Math.floor(s*0.15), Math.floor(s*0.5), Math.floor(s*0.06));
-      c.fillRect(Math.floor(s*0.25), Math.floor(s*0.28), Math.floor(s*0.5), Math.floor(s*0.06));
+      c.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.12), Math.floor(s * 0.56), Math.floor(s * 0.28));
+      c.fillStyle = '#5a3518';
+      c.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.12), Math.floor(s * 0.56), Math.max(2, Math.floor(s * 0.06)));
       // Seat
       c.fillStyle = '#5a3518';
-      c.fillRect(Math.floor(s*0.18), Math.floor(s*0.44), Math.floor(s*0.64), Math.floor(s*0.14));
-      fillNoise(c, Math.floor(s*0.18), Math.floor(s*0.44), Math.floor(s*0.64), Math.floor(s*0.14), ['#6a4528','#4e2c14'], 0.35, rng);
-      // Legs
+      c.fillRect(Math.floor(s * 0.2), Math.floor(s * 0.44), Math.floor(s * 0.6), Math.floor(s * 0.14));
+      // Legs (scaled)
+      const chLW = Math.max(2, Math.floor(s * 0.07));
       c.fillStyle = '#3a1808';
-      c.fillRect(Math.floor(s*0.22), Math.floor(s*0.58), Math.floor(s*0.06), Math.floor(s*0.34));
-      c.fillRect(Math.floor(s*0.72), Math.floor(s*0.58), Math.floor(s*0.06), Math.floor(s*0.34));
+      c.fillRect(Math.floor(s * 0.24), Math.floor(s * 0.58), chLW, Math.floor(s * 0.32));
+      c.fillRect(Math.floor(s * 0.72) - chLW + 2, Math.floor(s * 0.58), chLW, Math.floor(s * 0.32));
       break;
     }
 
@@ -1093,28 +1068,28 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.BED: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838'], 0.3, rng);
       // Frame
       c.fillStyle = '#4a2510';
-      c.fillRect(Math.floor(s*0.04), Math.floor(s*0.12), Math.floor(s*0.92), Math.floor(s*0.8));
-      fillNoise(c, Math.floor(s*0.04), Math.floor(s*0.12), Math.floor(s*0.92), Math.floor(s*0.8), ['#3a1808','#4a2810'], 0.35, rng);
+      c.fillRect(Math.floor(s * 0.06), Math.floor(s * 0.14), Math.floor(s * 0.88), Math.floor(s * 0.76));
+      // Frame highlight
+      c.fillStyle = '#5a3518';
+      c.fillRect(Math.floor(s * 0.06), Math.floor(s * 0.14), Math.floor(s * 0.88), Math.max(2, Math.floor(s * 0.06)));
       // Mattress
       c.fillStyle = '#e0d8c0';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.18), Math.floor(s*0.84), Math.floor(s*0.68));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.18), Math.floor(s*0.84), Math.floor(s*0.68), ['#d8d0b8','#e4dcc4','#dcd4bc'], 0.35, rng);
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.2), Math.floor(s * 0.8), Math.floor(s * 0.64));
       // Blanket
       c.fillStyle = '#7a1515';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.45), Math.floor(s*0.84), Math.floor(s*0.42));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.45), Math.floor(s*0.84), Math.floor(s*0.42), ['#701010','#841a1a','#7a1515','#6a0e0e'], 0.45, rng);
-      // Fold line
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.48), Math.floor(s * 0.8), Math.floor(s * 0.36));
       c.fillStyle = '#8a2525';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.45), Math.floor(s*0.84), Math.floor(s*0.06));
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.48), Math.floor(s * 0.8), Math.max(2, Math.floor(s * 0.06)));
+      // Blanket fold
+      c.fillStyle = '#6a0e0e';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.82), Math.floor(s * 0.8), Math.max(1, Math.floor(s * 0.03)));
       // Pillow
       c.fillStyle = '#f0ead8';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.2), Math.floor(s*0.35), Math.floor(s*0.2));
-      fillNoise(c, Math.floor(s*0.12), Math.floor(s*0.2), Math.floor(s*0.35), Math.floor(s*0.2), ['#e8e2d0','#f4eee0','#ece6d4'], 0.35, rng);
-      c.fillStyle = '#fff';
-      c.fillRect(Math.floor(s*0.14), Math.floor(s*0.22), Math.floor(s*0.15), Math.floor(s*0.04));
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.22), Math.floor(s * 0.3), Math.floor(s * 0.2));
+      c.fillStyle = '#e8e0d0';
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.36), Math.floor(s * 0.3), Math.max(1, Math.floor(s * 0.03)));
       break;
     }
 
@@ -1122,32 +1097,18 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.RUG: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838'], 0.3, rng);
-      // Rug
       c.fillStyle = '#6a1818';
-      c.fillRect(Math.floor(s*0.04), Math.floor(s*0.04), Math.floor(s*0.92), Math.floor(s*0.92));
-      fillNoise(c, Math.floor(s*0.04), Math.floor(s*0.04), Math.floor(s*0.92), Math.floor(s*0.92), ['#601010','#701818','#651515','#751a1a'], 0.5, rng);
-      // Gold borders
-      c.fillStyle = '#d4a040';
-      c.fillRect(Math.floor(s*0.04), Math.floor(s*0.04), Math.floor(s*0.92), 2);
-      c.fillRect(Math.floor(s*0.04), Math.floor(s*0.92), Math.floor(s*0.92), 2);
-      c.fillRect(Math.floor(s*0.04), Math.floor(s*0.04), 2, Math.floor(s*0.92));
-      c.fillRect(Math.floor(s*0.92)+1, Math.floor(s*0.04), 2, Math.floor(s*0.92));
-      // Inner border
-      c.fillStyle = '#c89838';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.12), Math.floor(s*0.76), 1);
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.86), Math.floor(s*0.76), 1);
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.12), 1, Math.floor(s*0.76));
-      c.fillRect(Math.floor(s*0.86)+1, Math.floor(s*0.12), 1, Math.floor(s*0.76));
-      // Center diamond pattern
-      c.fillStyle = '#801818';
-      const mid = Math.floor(s/2);
-      for (let d = 0; d < Math.floor(s*0.15); d++) {
-        c.fillRect(mid-d, mid-Math.floor(s*0.15)+d, 1, 1);
-        c.fillRect(mid+d, mid-Math.floor(s*0.15)+d, 1, 1);
-        c.fillRect(mid-d, mid+Math.floor(s*0.15)-d, 1, 1);
-        c.fillRect(mid+d, mid+Math.floor(s*0.15)-d, 1, 1);
+      c.fillRect(1, 1, s - 2, s - 2);
+      const rgP = Math.floor(s * s / 80);
+      for (let i = 0; i < rgP; i++) {
+        c.fillStyle = ['#601010','#701818','#681414'][Math.floor(rng() * 3)];
+        c.fillRect(2 + Math.floor(rng() * (s - 4)), 2 + Math.floor(rng() * (s - 4)), rng() < 0.3 ? 2 : 1, 1);
       }
+      // Gold borders (scaled)
+      const rgBW = Math.max(1, Math.floor(s * 0.06));
+      c.fillStyle = '#d4a040';
+      c.fillRect(1, 1, s - 2, rgBW); c.fillRect(1, s - 1 - rgBW, s - 2, rgBW);
+      c.fillRect(1, 1, rgBW, s - 2); c.fillRect(s - 1 - rgBW, 1, rgBW, s - 2);
       break;
     }
 
@@ -1155,33 +1116,31 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.BARREL: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838'], 0.35, rng);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.15)';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.8), Math.floor(s*0.76), Math.floor(s*0.12));
-      // Barrel body
-      c.fillStyle = '#5a3818';
-      c.fillRect(Math.floor(s*0.18), Math.floor(s*0.1), Math.floor(s*0.64), Math.floor(s*0.76));
-      // Wider middle
-      c.fillRect(Math.floor(s*0.14), Math.floor(s*0.28), Math.floor(s*0.72), Math.floor(s*0.4));
-      fillNoise(c, Math.floor(s*0.14), Math.floor(s*0.1), Math.floor(s*0.72), Math.floor(s*0.76), [
-        '#4e2c10','#5a3818','#6a4828','#523018','#5e3c1c'
-      ], 0.55, rng);
-      // Staves (vertical lines)
-      c.fillStyle = '#4a2c10';
-      for (const sx of [0.25, 0.38, 0.52, 0.65]) {
-        c.fillRect(Math.floor(s*sx), Math.floor(s*0.12), 1, Math.floor(s*0.72));
+      const brP = Math.floor(s * s / 80);
+      for (let i = 0; i < brP; i++) {
+        c.fillStyle = ['#8a5828','#a07040','#946030'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.4 ? 2 : 1, 1);
       }
-      // Metal rings
-      c.fillStyle = '#505050';
-      c.fillRect(Math.floor(s*0.16), Math.floor(s*0.2), Math.floor(s*0.68), 2);
-      c.fillRect(Math.floor(s*0.16), Math.floor(s*0.75), Math.floor(s*0.68), 2);
-      fillNoise(c, Math.floor(s*0.16), Math.floor(s*0.2), Math.floor(s*0.68), 2, ['#4a4a4a','#5a5a5a','#555'], 0.6, rng);
-      fillNoise(c, Math.floor(s*0.16), Math.floor(s*0.75), Math.floor(s*0.68), 2, ['#4a4a4a','#5a5a5a','#555'], 0.6, rng);
-      // Top
-      fillNoise(c, Math.floor(s*0.2), Math.floor(s*0.08), Math.floor(s*0.6), Math.floor(s*0.06), ['#7a5838','#6a4828','#8a6848'], 0.5, rng);
-      // Highlight
-      fillNoise(c, Math.floor(s*0.2), Math.floor(s*0.3), Math.floor(s*0.12), Math.floor(s*0.15), ['#7a5838','#8a6848'], 0.25, rng);
+      c.fillStyle = 'rgba(0,0,0,0.1)';
+      c.fillRect(Math.floor(s * 0.12), Math.floor(s * 0.82), Math.floor(s * 0.76), Math.max(2, Math.floor(s * 0.06)));
+      // Body
+      c.fillStyle = '#5a3818';
+      c.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.1), Math.floor(s * 0.64), Math.floor(s * 0.74));
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.28), Math.floor(s * 0.72), Math.floor(s * 0.38));
+      // Staves
+      c.fillStyle = '#4a2c10';
+      for (const stX of [0.26, 0.38, 0.5, 0.62]) {
+        c.fillRect(Math.floor(s * stX), Math.floor(s * 0.12), 1, Math.floor(s * 0.7));
+      }
+      // Metal rings (scaled)
+      const brRH = Math.max(2, Math.floor(s * 0.05));
+      c.fillStyle = '#606060';
+      c.fillRect(Math.floor(s * 0.16), Math.floor(s * 0.2), Math.floor(s * 0.68), brRH);
+      c.fillRect(Math.floor(s * 0.16), Math.floor(s * 0.72), Math.floor(s * 0.68), brRH);
+      // Ring highlights
+      c.fillStyle = '#808080';
+      c.fillRect(Math.floor(s * 0.16), Math.floor(s * 0.2), Math.floor(s * 0.68), 1);
+      c.fillRect(Math.floor(s * 0.16), Math.floor(s * 0.72), Math.floor(s * 0.68), 1);
       break;
     }
 
@@ -1189,26 +1148,18 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.CRATE: {
       c.fillStyle = '#9a6838';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#8a5828','#9a6838'], 0.3, rng);
-      // Crate body
+      // Body
       c.fillStyle = '#7a5830';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.12), Math.floor(s*0.76), Math.floor(s*0.76));
-      fillNoise(c, Math.floor(s*0.12), Math.floor(s*0.12), Math.floor(s*0.76), Math.floor(s*0.76), [
-        '#6a4820','#7a5830','#8a6840','#725028','#846038'
-      ], 0.55, rng);
-      // Top highlight
-      fillNoise(c, Math.floor(s*0.12), Math.floor(s*0.12), Math.floor(s*0.76), Math.floor(s*0.08), ['#947048','#9a7850'], 0.4, rng);
-      // Cross beams
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.14), Math.floor(s * 0.72), Math.floor(s * 0.72));
+      c.fillStyle = '#8a6840';
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.14), Math.floor(s * 0.72), 2);
+      // Cross
       c.fillStyle = '#5a3818';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.48), Math.floor(s*0.76), 2);
-      c.fillRect(Math.floor(s*0.48), Math.floor(s*0.12), 2, Math.floor(s*0.76));
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.48), Math.floor(s * 0.72), 1);
+      c.fillRect(Math.floor(s * 0.48), Math.floor(s * 0.14), 1, Math.floor(s * 0.72));
       // Nails
-      c.fillStyle = '#999';
-      c.fillRect(Math.floor(s*0.48), Math.floor(s*0.48), 2, 2);
-      c.fillRect(Math.floor(s*0.48), Math.floor(s*0.14), 2, 2);
-      c.fillRect(Math.floor(s*0.48), Math.floor(s*0.82), 2, 2);
-      c.fillRect(Math.floor(s*0.14), Math.floor(s*0.48), 2, 2);
-      c.fillRect(Math.floor(s*0.82), Math.floor(s*0.48), 2, 2);
+      c.fillStyle = '#aaa';
+      c.fillRect(Math.floor(s * 0.48), Math.floor(s * 0.48), 1, 1);
       break;
     }
 
@@ -1216,59 +1167,67 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.WELL: {
       c.fillStyle = '#858585';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#7a7a7a','#8a8a8a','#808080'], 0.45, rng);
-      // Well wall
+      // Texture
+      const wlP = Math.floor(s * s / 100);
+      for (let i = 0; i < wlP; i++) {
+        c.fillStyle = ['#7a7a7a','#909090','#808080'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      // Stone wall
       c.fillStyle = '#5a5a5a';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.25), Math.floor(s*0.84), Math.floor(s*0.68));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.25), Math.floor(s*0.84), Math.floor(s*0.68), ['#505050','#606060','#5a5a5a','#545454'], 0.5, rng);
-      // Well wall top
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.25), Math.floor(s*0.84), Math.floor(s*0.1), ['#6a6a6a','#747474','#707070'], 0.5, rng);
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.26), Math.floor(s * 0.84), Math.floor(s * 0.66));
+      c.fillStyle = '#6a6a6a';
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.26), Math.floor(s * 0.84), Math.max(2, Math.floor(s * 0.06)));
       // Water
       c.fillStyle = '#1a4a90';
-      c.fillRect(Math.floor(s*0.18), Math.floor(s*0.38), Math.floor(s*0.64), Math.floor(s*0.44));
-      fillNoise(c, Math.floor(s*0.18), Math.floor(s*0.38), Math.floor(s*0.64), Math.floor(s*0.44), ['#164080','#1e5298','#1a4890'], 0.35, rng);
-      // Posts
+      c.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.38), Math.floor(s * 0.64), Math.floor(s * 0.42));
+      c.fillStyle = '#2a5aa0';
+      c.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.38), Math.floor(s * 0.64), Math.max(2, Math.floor(s * 0.06)));
+      // Posts (scaled)
+      const wlPW = Math.max(2, Math.floor(s * 0.07));
       c.fillStyle = '#4a3018';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.06), Math.floor(s*0.08), Math.floor(s*0.55));
-      c.fillRect(Math.floor(s*0.8), Math.floor(s*0.06), Math.floor(s*0.08), Math.floor(s*0.55));
-      fillNoise(c, Math.floor(s*0.12), Math.floor(s*0.06), Math.floor(s*0.08), Math.floor(s*0.55), ['#3a2008','#5a4020'], 0.35, rng);
-      fillNoise(c, Math.floor(s*0.8), Math.floor(s*0.06), Math.floor(s*0.08), Math.floor(s*0.55), ['#3a2008','#5a4020'], 0.35, rng);
-      // Roof beam
+      c.fillRect(Math.floor(s * 0.12), Math.floor(s * 0.06), wlPW, Math.floor(s * 0.52));
+      c.fillRect(Math.floor(s * 0.82), Math.floor(s * 0.06), wlPW, Math.floor(s * 0.52));
+      // Post highlights
+      c.fillStyle = '#5a4028';
+      c.fillRect(Math.floor(s * 0.12), Math.floor(s * 0.06), 1, Math.floor(s * 0.52));
+      c.fillRect(Math.floor(s * 0.82), Math.floor(s * 0.06), 1, Math.floor(s * 0.52));
+      // Roof beam (scaled)
+      const wlBH = Math.max(2, Math.floor(s * 0.06));
       c.fillStyle = '#5a3818';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.04), Math.floor(s*0.84), Math.floor(s*0.06));
-      // Rope
-      c.fillStyle = '#8a7a50';
-      c.fillRect(Math.floor(s*0.48), Math.floor(s*0.1), 2, Math.floor(s*0.3));
-      // Bucket hint
-      c.fillStyle = '#6a5030';
-      c.fillRect(Math.floor(s*0.44), Math.floor(s*0.38), Math.floor(s*0.12), Math.floor(s*0.1));
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.04), Math.floor(s * 0.84), wlBH);
       break;
     }
 
     // ===== FENCE =====
     case T.FENCE: {
-      c.fillStyle = '#3a7a2d';
+      // Grass background
+      c.fillStyle = '#3a7a2c';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232','#2e6a22'], 0.45, rng);
-      // Posts
-      c.fillStyle = '#5a3818';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.15), Math.floor(s*0.1), Math.floor(s*0.76));
-      c.fillRect(Math.floor(s*0.82), Math.floor(s*0.15), Math.floor(s*0.1), Math.floor(s*0.76));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.15), Math.floor(s*0.1), Math.floor(s*0.76), ['#4a2808','#6a4828'], 0.35, rng);
-      fillNoise(c, Math.floor(s*0.82), Math.floor(s*0.15), Math.floor(s*0.1), Math.floor(s*0.76), ['#4a2808','#6a4828'], 0.35, rng);
-      // Post tops
-      fillNoise(c, Math.floor(s*0.06), Math.floor(s*0.12), Math.floor(s*0.14), Math.floor(s*0.05), ['#6a4828','#7a5838'], 0.5, rng);
-      fillNoise(c, Math.floor(s*0.8), Math.floor(s*0.12), Math.floor(s*0.14), Math.floor(s*0.05), ['#6a4828','#7a5838'], 0.5, rng);
-      // Rails
+      const fnGP = Math.floor(s * s / 80);
+      for (let i = 0; i < fnGP; i++) {
+        c.fillStyle = ['#367628','#3e7e30','#347224'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Posts (scaled thickness)
+      const fnPW = Math.max(2, Math.floor(s * 0.09));
+      c.fillStyle = '#4a2810';
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.15), fnPW, Math.floor(s * 0.75));
+      c.fillRect(Math.floor(s * 0.84), Math.floor(s * 0.15), fnPW, Math.floor(s * 0.75));
+      // Post highlights
       c.fillStyle = '#6a4828';
-      c.fillRect(0, Math.floor(s*0.3), s, Math.floor(s*0.08));
-      c.fillRect(0, Math.floor(s*0.58), s, Math.floor(s*0.08));
-      fillNoise(c, 0, Math.floor(s*0.3), s, Math.floor(s*0.08), ['#5a3818','#7a5838','#6a4828'], 0.4, rng);
-      fillNoise(c, 0, Math.floor(s*0.58), s, Math.floor(s*0.08), ['#5a3818','#7a5838','#6a4828'], 0.4, rng);
-      // Rail highlight
-      c.fillStyle = '#7a5838';
-      c.fillRect(0, Math.floor(s*0.3), s, 1);
-      c.fillRect(0, Math.floor(s*0.58), s, 1);
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.15), 1, Math.floor(s * 0.75));
+      c.fillRect(Math.floor(s * 0.84), Math.floor(s * 0.15), 1, Math.floor(s * 0.75));
+      // Rails (scaled height)
+      const fnRH = Math.max(2, Math.floor(s * 0.08));
+      c.fillStyle = '#5a3818';
+      c.fillRect(0, Math.floor(s * 0.3), s, fnRH);
+      c.fillRect(0, Math.floor(s * 0.58), s, fnRH);
+      // Rail highlights
+      c.fillStyle = '#7a5830';
+      c.fillRect(0, Math.floor(s * 0.3), s, 1);
+      c.fillRect(0, Math.floor(s * 0.58), s, 1);
       break;
     }
 
@@ -1276,115 +1235,125 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.WOOD_WALL: {
       c.fillStyle = '#5a3818';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, [
-        '#503010','#5a3818','#644020','#4a2808','#5e3c1c','#543418'
-      ], 0.65, rng);
       // Top highlight
-      fillNoise(c, 0, 0, s, Math.floor(s*0.1), ['#6a4828','#7a5838','#725030'], 0.5, rng);
-      // Horizontal plank lines
+      c.fillStyle = '#6a4828';
+      c.fillRect(0, 0, s, Math.max(2, Math.floor(s * 0.08)));
+      // Plank lines (3 horizontal sections)
       c.fillStyle = '#3a2008';
-      c.fillRect(0, Math.floor(s*0.32), s, 2);
-      c.fillRect(0, Math.floor(s*0.64), s, 2);
-      // Vertical board joints
-      const boardOff = v % 2 === 0;
-      c.fillRect(Math.floor(s*(boardOff?0.5:0.35)), 0, 1, Math.floor(s*0.32));
-      c.fillRect(Math.floor(s*(boardOff?0.3:0.65)), Math.floor(s*0.33), 1, Math.floor(s*0.31));
-      c.fillRect(Math.floor(s*(boardOff?0.7:0.45)), Math.floor(s*0.65), 1, Math.floor(s*0.35));
-      // Dark bottom edge (3D)
-      fillNoise(c, 0, s-3, s, 3, ['#2a1808','#341e0a'], 0.5, rng);
+      c.fillRect(0, Math.floor(s * 0.33), s, 1);
+      c.fillRect(0, Math.floor(s * 0.66), s, 1);
+      // Board joints (offset per variant)
+      const wwBoardOff = v % 2 === 0;
+      c.fillRect(Math.floor(s * (wwBoardOff ? 0.5 : 0.35)), 0, 1, Math.floor(s * 0.33));
+      c.fillRect(Math.floor(s * (wwBoardOff ? 0.3 : 0.65)), Math.floor(s * 0.34), 1, Math.floor(s * 0.32));
+      c.fillRect(Math.floor(s * (wwBoardOff ? 0.7 : 0.45)), Math.floor(s * 0.67), 1, Math.floor(s * 0.33));
+      // Wood grain texture (scaled)
+      const wwP = Math.floor(s * s / 80);
+      for (let i = 0; i < wwP; i++) {
+        c.fillStyle = ['#503010','#624020','#5a3818'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Dark bottom/right edge
       c.fillStyle = '#2a1808';
-      c.fillRect(s-1, 0, 1, s);
-      // Nails
-      if (v%2===0) { c.fillStyle = '#888'; c.fillRect(Math.floor(s*0.4), Math.floor(s*0.45), 2, 2); }
+      c.fillRect(0, s - 1, s, 1);
+      c.fillRect(s - 1, 0, 1, s);
       break;
     }
 
     // ===== SAND =====
     case T.SAND: {
-      c.fillStyle = '#c8b078';
+      c.fillStyle = '#c8b478';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, [
-        '#c0a870','#ccb480','#c4ac78','#d0b888','#bca468',
-        '#c8b078','#d4bc90','#c0a870','#b89c60','#d0b480'
-      ], 0.7, rng);
-      // Lighter patches
-      fillNoise(c, 0, 0, s, s, ['#dcc898','#e0cca0'], 0.06, rng);
-      // Dark speckles
-      fillNoise(c, 0, 0, s, s, ['#a89058','#9c8450'], 0.05, rng);
-      // Shell detail
-      if (v%4===0) {
-        const shx = Math.floor(rng()*s*0.7)+Math.floor(s*0.1);
-        const shy = Math.floor(rng()*s*0.7)+Math.floor(s*0.1);
-        c.fillStyle = '#e8dcc0';
-        c.fillRect(shx, shy, 3, 2);
-        c.fillStyle = '#f0e8d4';
-        c.fillRect(shx, shy, 3, 1);
+      // Sandy texture (scaled)
+      const sdShades = ['#c4b074','#ccb87c','#c0ac70','#cab680','#c6b276'];
+      const sdP = Math.floor(s * s / 60);
+      for (let i = 0; i < sdP; i++) {
+        c.fillStyle = sdShades[Math.floor(rng() * sdShades.length)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.4 ? 2 : 1, 1);
+      }
+      // Sand ripple line
+      if (v % 3 === 0) {
+        c.fillStyle = '#d8c890';
+        const sdRy = 5 + Math.floor(rng() * (s - 10));
+        for (let px = 0; px < s; px++) {
+          if (rng() < 0.6) c.fillRect(px, sdRy, 1, 1);
+        }
+      }
+      // Grain detail
+      if (v % 4 < 2) {
+        c.fillStyle = '#b8a060';
+        c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 3)), 2, 1);
       }
       break;
     }
 
     // ===== GRAVESTONE =====
     case T.GRAVESTONE: {
-      // Dead ground
+      // Dark dirt ground
       c.fillStyle = '#5a4a35';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#504030','#5e4e3a','#544838','#625240'], 0.6, rng);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.18)';
-      c.fillRect(Math.floor(s*0.18), Math.floor(s*0.78), Math.floor(s*0.64), Math.floor(s*0.1));
-      // Stone body
-      c.fillStyle = '#747474';
-      c.fillRect(Math.floor(s*0.22), Math.floor(s*0.28), Math.floor(s*0.56), Math.floor(s*0.58));
-      c.fillRect(Math.floor(s*0.28), Math.floor(s*0.18), Math.floor(s*0.44), Math.floor(s*0.12));
-      c.fillRect(Math.floor(s*0.34), Math.floor(s*0.12), Math.floor(s*0.32), Math.floor(s*0.08));
-      fillNoise(c, Math.floor(s*0.22), Math.floor(s*0.18), Math.floor(s*0.56), Math.floor(s*0.68), ['#6a6a6a','#808080','#747474','#787878','#6e6e6e'], 0.5, rng);
-      // Highlight top
-      fillNoise(c, Math.floor(s*0.24), Math.floor(s*0.18), Math.floor(s*0.52), Math.floor(s*0.06), ['#8a8a8a','#929292'], 0.4, rng);
-      // Cross engraving
-      c.fillStyle = '#909090';
-      c.fillRect(Math.floor(s*0.46), Math.floor(s*0.2), Math.floor(s*0.08), Math.floor(s*0.3));
-      c.fillRect(Math.floor(s*0.36), Math.floor(s*0.28), Math.floor(s*0.28), Math.floor(s*0.06));
-      // Crack
-      c.fillStyle = '#555';
-      if (v%3===0) {
-        const cy = Math.floor(s*0.5);
-        for (let i = 0; i < Math.floor(s*0.15); i++) {
-          c.fillRect(Math.floor(s*0.3)+Math.floor(rng()*3), cy+i, 1, 1);
-        }
+      const gsGP = Math.floor(s * s / 70);
+      for (let i = 0; i < gsGP; i++) {
+        c.fillStyle = ['#504030','#5e4e3a','#584838'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
       }
+      // Ground shadow
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      c.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.78), Math.floor(s * 0.64), Math.max(2, Math.floor(s * 0.06)));
+      // Gravestone body
+      c.fillStyle = '#6a6a6a';
+      c.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.28), Math.floor(s * 0.56), Math.floor(s * 0.55));
+      // Rounded top
+      c.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.18), Math.floor(s * 0.44), Math.floor(s * 0.12));
+      // Highlight left
+      c.fillStyle = '#808080';
+      c.fillRect(Math.floor(s * 0.22), Math.floor(s * 0.28), Math.max(2, Math.floor(s * 0.06)), Math.floor(s * 0.5));
+      c.fillRect(Math.floor(s * 0.28), Math.floor(s * 0.18), Math.floor(s * 0.44), Math.max(2, Math.floor(s * 0.06)));
+      // Shadow right
+      c.fillStyle = '#585858';
+      c.fillRect(Math.floor(s * 0.72), Math.floor(s * 0.28), Math.max(2, Math.floor(s * 0.06)), Math.floor(s * 0.5));
+      // Cross engraving
+      const gsLW = Math.max(2, Math.floor(s * 0.06));
+      c.fillStyle = '#555555';
+      c.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.24), gsLW, Math.floor(s * 0.35));
+      c.fillRect(Math.floor(s * 0.34), Math.floor(s * 0.34), Math.floor(s * 0.32), gsLW);
       break;
     }
 
     // ===== DEAD TREE =====
     case T.DEAD_TREE: {
+      // Dark dirt ground
       c.fillStyle = '#5a4a35';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#504030','#5e4e3a','#544838'], 0.5, rng);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.18)';
-      c.fillRect(Math.floor(s*0.12), Math.floor(s*0.8), Math.floor(s*0.76), Math.floor(s*0.1));
-      // Trunk
+      const dtGP = Math.floor(s * s / 70);
+      for (let i = 0; i < dtGP; i++) {
+        c.fillStyle = ['#504030','#5e4e3a','#584838'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Ground shadow
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.8), Math.floor(s * 0.8), Math.max(2, Math.floor(s * 0.06)));
+      // Trunk (scaled width)
+      const dtTW = Math.max(3, Math.floor(s * 0.16));
       c.fillStyle = '#2e1a08';
-      c.fillRect(Math.floor(s*0.38), Math.floor(s*0.35), Math.floor(s*0.24), Math.floor(s*0.56));
-      fillNoise(c, Math.floor(s*0.38), Math.floor(s*0.35), Math.floor(s*0.24), Math.floor(s*0.56), ['#221408','#3a2510','#2e1a08','#362010'], 0.55, rng);
-      // Bark highlight
-      fillNoise(c, Math.floor(s*0.38), Math.floor(s*0.35), Math.floor(s*0.08), Math.floor(s*0.5), ['#4a3520','#3e2a18'], 0.2, rng);
-      // Branches
+      c.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.35), dtTW, Math.floor(s * 0.5));
+      // Trunk highlight
+      c.fillStyle = '#3e2a18';
+      c.fillRect(Math.floor(s * 0.42), Math.floor(s * 0.35), Math.floor(dtTW * 0.4), Math.floor(s * 0.5));
+      // Branches (scaled thickness)
+      const dtBH = Math.max(2, Math.floor(s * 0.06));
       c.fillStyle = '#2e1a08';
-      // Main left
-      c.fillRect(Math.floor(s*0.15), Math.floor(s*0.22), Math.floor(s*0.25), 3);
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.1), Math.floor(s*0.1), 3);
-      c.fillRect(Math.floor(s*0.15), Math.floor(s*0.12), 3, Math.floor(s*0.12));
-      // Main right
-      c.fillRect(Math.floor(s*0.6), Math.floor(s*0.18), Math.floor(s*0.28), 3);
-      c.fillRect(Math.floor(s*0.82), Math.floor(s*0.08), Math.floor(s*0.1), 3);
-      c.fillRect(Math.floor(s*0.82), Math.floor(s*0.08), 3, Math.floor(s*0.14));
-      // Upper
-      c.fillRect(Math.floor(s*0.45), Math.floor(s*0.06), 3, Math.floor(s*0.3));
-      c.fillRect(Math.floor(s*0.3), Math.floor(s*0.04), Math.floor(s*0.18), 3);
-      // Small twigs
-      c.fillRect(Math.floor(s*0.2), Math.floor(s*0.03), Math.floor(s*0.08), 2);
-      c.fillRect(Math.floor(s*0.75), Math.floor(s*0.04), Math.floor(s*0.08), 2);
+      c.fillRect(Math.floor(s * 0.15), Math.floor(s * 0.22), Math.floor(s * 0.28), dtBH);
+      c.fillRect(Math.floor(s * 0.56), Math.floor(s * 0.18), Math.floor(s * 0.3), dtBH);
+      c.fillRect(Math.floor(s * 0.44), Math.floor(s * 0.06), dtBH, Math.floor(s * 0.3));
+      c.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.04), Math.floor(s * 0.16), dtBH);
+      c.fillRect(Math.floor(s * 0.72), Math.floor(s * 0.04), Math.floor(s * 0.14), dtBH);
+      // Tilted branch ends
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.2), dtBH, dtBH);
+      c.fillRect(Math.floor(s * 0.84), Math.floor(s * 0.16), dtBH, dtBH);
       break;
     }
 
@@ -1392,18 +1361,22 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.BONE: {
       c.fillStyle = '#7a6040';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#6a5030','#7a6040','#8a7050','#705838'], 0.6, rng);
-      // Bone shape
-      c.save();
-      c.translate(s/2, s/2);
-      c.rotate((v * 0.8) % (Math.PI * 2));
+      const bnGP = Math.floor(s * s / 70);
+      for (let i = 0; i < bnGP; i++) {
+        c.fillStyle = ['#6a5030','#846c48','#725838'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Bone shaft (scaled)
+      const bnH = Math.max(2, Math.floor(s * 0.08));
       c.fillStyle = '#e0d8c0';
-      c.fillRect(-Math.floor(s*0.28), -Math.floor(s*0.03), Math.floor(s*0.56), Math.floor(s*0.06));
-      fillNoise(c, -Math.floor(s*0.28), -Math.floor(s*0.03), Math.floor(s*0.56), Math.floor(s*0.06), ['#d8d0b8','#e8e0c8','#dcd4bc'], 0.35, rng);
-      // Bone ends
-      c.fillRect(-Math.floor(s*0.3), -Math.floor(s*0.06), Math.floor(s*0.06), Math.floor(s*0.12));
-      c.fillRect(Math.floor(s*0.24), -Math.floor(s*0.06), Math.floor(s*0.06), Math.floor(s*0.12));
-      c.restore();
+      c.fillRect(Math.floor(s * 0.18), Math.floor(s * 0.44), Math.floor(s * 0.64), bnH);
+      // Bone ends (knobs)
+      c.fillRect(Math.floor(s * 0.14), Math.floor(s * 0.38), Math.max(3, Math.floor(s * 0.1)), Math.floor(s * 0.18));
+      c.fillRect(Math.floor(s * 0.76), Math.floor(s * 0.38), Math.max(3, Math.floor(s * 0.1)), Math.floor(s * 0.18));
+      // Highlight
+      c.fillStyle = '#f0e8d0';
+      c.fillRect(Math.floor(s * 0.2), Math.floor(s * 0.44), Math.floor(s * 0.6), 1);
       break;
     }
 
@@ -1411,22 +1384,20 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.MUD: {
       c.fillStyle = '#504020';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, [
-        '#453518','#504020','#5a4a28','#483a1c','#544424',
-        '#3e3014','#4c3e20','#463818'
-      ], 0.7, rng);
-      // Wet puddles
-      for (let i = 0; i < 2+Math.floor(rng()*2); i++) {
-        const px = Math.floor(rng()*s*0.6)+Math.floor(s*0.1);
-        const py = Math.floor(rng()*s*0.6)+Math.floor(s*0.1);
-        const pw = Math.floor(rng()*s*0.25)+Math.floor(s*0.1);
-        const ph = Math.floor(rng()*s*0.15)+Math.floor(s*0.05);
+      const mdGP = Math.floor(s * s / 50);
+      for (let i = 0; i < mdGP; i++) {
+        c.fillStyle = ['#453518','#5a4a28','#483a1c','#524020'][Math.floor(rng() * 4)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.4 ? 2 : 1, rng() < 0.3 ? 2 : 1);
+      }
+      // Puddle
+      if (v % 2 === 0) {
         c.fillStyle = '#3a2c10';
-        c.fillRect(px, py, pw, ph);
-        fillNoise(c, px, py, pw, ph, ['#342808','#3e3010','#302408'], 0.35, rng);
-        // Slight reflection
-        c.fillStyle = 'rgba(255,255,255,0.04)';
-        c.fillRect(px+1, py, Math.floor(pw*0.4), 1);
+        const mdPx = Math.floor(rng() * s * 0.3) + 3;
+        const mdPy = Math.floor(rng() * s * 0.3) + 3;
+        c.fillRect(mdPx, mdPy, Math.floor(s * 0.35), Math.floor(s * 0.2));
+        c.fillStyle = '#443418';
+        c.fillRect(mdPx + 1, mdPy, Math.floor(s * 0.33), 1);
       }
       break;
     }
@@ -1435,31 +1406,27 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.HAY: {
       c.fillStyle = '#5a4020';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#504018','#5a4020','#644828'], 0.4, rng);
-      // Shadow
-      c.fillStyle = 'rgba(0,0,0,0.15)';
-      c.fillRect(Math.floor(s*0.1), Math.floor(s*0.78), Math.floor(s*0.8), Math.floor(s*0.12));
-      // Hay bale body
+      c.fillStyle = 'rgba(0,0,0,0.1)';
+      c.fillRect(Math.floor(s * 0.1), Math.floor(s * 0.78), Math.floor(s * 0.8), Math.max(2, Math.floor(s * 0.06)));
+      // Bale body
       c.fillStyle = '#b89030';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.16), Math.floor(s*0.84), Math.floor(s*0.68));
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.16), Math.floor(s*0.84), Math.floor(s*0.68), [
-        '#a88028','#b89030','#c49838','#aa8228','#c09030','#a07820'
-      ], 0.6, rng);
-      // Top highlight
-      fillNoise(c, Math.floor(s*0.08), Math.floor(s*0.16), Math.floor(s*0.84), Math.floor(s*0.08), ['#d0a848','#c8a040','#d8b050'], 0.5, rng);
-      // Straw lines
-      c.fillStyle = '#907020';
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.36), Math.floor(s*0.84), 1);
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.54), Math.floor(s*0.84), 1);
-      c.fillRect(Math.floor(s*0.08), Math.floor(s*0.72), Math.floor(s*0.84), 1);
-      // Rope
-      c.fillStyle = '#5a3810';
-      c.fillRect(Math.floor(s*0.48), Math.floor(s*0.16), Math.floor(s*0.06), Math.floor(s*0.68));
-      fillNoise(c, Math.floor(s*0.48), Math.floor(s*0.16), Math.floor(s*0.06), Math.floor(s*0.68), ['#4a2808','#6a4818'], 0.3, rng);
-      // Loose straw
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.16), Math.floor(s * 0.84), Math.floor(s * 0.66));
       c.fillStyle = '#c8a040';
-      c.fillRect(Math.floor(s*0.05), Math.floor(s*0.82), Math.floor(s*0.08), 2);
-      c.fillRect(Math.floor(s*0.88), Math.floor(s*0.85), Math.floor(s*0.08), 2);
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.16), Math.floor(s * 0.84), Math.max(2, Math.floor(s * 0.06)));
+      // Straw lines (scaled)
+      c.fillStyle = '#907020';
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.36), Math.floor(s * 0.84), 1);
+      c.fillRect(Math.floor(s * 0.08), Math.floor(s * 0.54), Math.floor(s * 0.84), 1);
+      // Straw texture
+      const hyP = Math.floor(s * s / 100);
+      for (let i = 0; i < hyP; i++) {
+        c.fillStyle = rng() < 0.5 ? '#a88028' : '#c09838';
+        c.fillRect(Math.floor(s * 0.1 + rng() * s * 0.8), Math.floor(s * 0.18 + rng() * s * 0.6), rng() < 0.3 ? 2 : 1, 1);
+      }
+      // Rope (scaled)
+      const hyRW = Math.max(2, Math.floor(s * 0.06));
+      c.fillStyle = '#5a3810';
+      c.fillRect(Math.floor(s * 0.47), Math.floor(s * 0.16), hyRW, Math.floor(s * 0.66));
       break;
     }
 
@@ -1467,18 +1434,24 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.ROOF_STONE: {
       c.fillStyle = '#585858';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#505050','#606060','#585858','#545454','#5c5c5c'], 0.6, rng);
-      // Tile rows
+      // Shingle rows (scaled count)
+      const rsRows = Math.max(4, Math.floor(s / 8));
       c.fillStyle = '#484848';
-      for (let i = 0; i < 4; i++) c.fillRect(0, Math.floor(i*s*0.25), s, 1);
-      // Offset columns
-      for (let row = 0; row < 4; row++) {
-        const off = row % 2 === 0 ? 0 : Math.floor(s*0.25);
-        for (let col = off; col < s; col += Math.floor(s*0.5)) {
-          c.fillRect(col, Math.floor(row*s*0.25), 1, Math.floor(s*0.25));
+      for (let i = 0; i < rsRows; i++) c.fillRect(0, Math.floor(i * s / rsRows), s, 1);
+      for (let row = 0; row < rsRows; row++) {
+        const rsOff = row % 2 === 0 ? 0 : Math.floor(s * 0.25);
+        for (let col = rsOff; col < s; col += Math.floor(s * 0.5)) {
+          c.fillRect(col, Math.floor(row * s / rsRows), 1, Math.floor(s / rsRows));
         }
       }
-      fillNoise(c, 0, 0, s, Math.floor(s*0.08), ['#6a6a6a','#707070'], 0.3, rng);
+      // Texture
+      const rsP = Math.floor(s * s / 100);
+      for (let i = 0; i < rsP; i++) {
+        c.fillStyle = ['#505050','#606060','#545454'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      c.fillStyle = '#686868';
+      c.fillRect(0, 0, s, 1);
       break;
     }
 
@@ -1486,18 +1459,118 @@ function renderDetailedTile(c, tileType, variant, s) {
     case T.ROOF_WOOD: {
       c.fillStyle = '#6a3818';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#5a2808','#6a3818','#7a4828','#603010','#724020'], 0.6, rng);
-      // Plank rows
+      const rwRows = Math.max(4, Math.floor(s / 8));
       c.fillStyle = '#4a2008';
-      for (let i = 0; i < 4; i++) c.fillRect(0, Math.floor(i*s*0.25), s, 1);
-      // Offset columns
-      for (let row = 0; row < 4; row++) {
-        const off = row % 2 === 0 ? 0 : Math.floor(s*0.25);
-        for (let col = off; col < s; col += Math.floor(s*0.5)) {
-          c.fillRect(col, Math.floor(row*s*0.25), 1, Math.floor(s*0.25));
+      for (let i = 0; i < rwRows; i++) c.fillRect(0, Math.floor(i * s / rwRows), s, 1);
+      for (let row = 0; row < rwRows; row++) {
+        const rwOff = row % 2 === 0 ? 0 : Math.floor(s * 0.25);
+        for (let col = rwOff; col < s; col += Math.floor(s * 0.5)) {
+          c.fillRect(col, Math.floor(row * s / rwRows), 1, Math.floor(s / rwRows));
         }
       }
-      fillNoise(c, 0, 0, s, Math.floor(s*0.08), ['#7a4828','#8a5838'], 0.3, rng);
+      // Texture
+      const rwP = Math.floor(s * s / 100);
+      for (let i = 0; i < rwP; i++) {
+        c.fillStyle = ['#5a2810','#744020','#623018'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      c.fillStyle = '#7a4828';
+      c.fillRect(0, 0, s, 1);
+      break;
+    }
+
+    // ===== ROOF RED =====
+    case T.ROOF_RED: {
+      c.fillStyle = '#8b1a1a';
+      c.fillRect(0, 0, s, s);
+      const rrRows = Math.max(4, Math.floor(s / 8));
+      c.fillStyle = '#6a0a0a';
+      for (let i = 0; i < rrRows; i++) c.fillRect(0, Math.floor(i * s / rrRows), s, 1);
+      for (let row = 0; row < rrRows; row++) {
+        const rrOff = row % 2 === 0 ? 0 : Math.floor(s * 0.25);
+        for (let col = rrOff; col < s; col += Math.floor(s * 0.5)) {
+          c.fillRect(col, Math.floor(row * s / rrRows), 1, Math.floor(s / rrRows));
+        }
+      }
+      const rrP = Math.floor(s * s / 100);
+      for (let i = 0; i < rrP; i++) {
+        c.fillStyle = ['#7b1212','#9b2222','#851818'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      c.fillStyle = '#a52a2a';
+      c.fillRect(0, 0, s, 1);
+      break;
+    }
+
+    // ===== ROOF BLUE =====
+    case T.ROOF_BLUE: {
+      c.fillStyle = '#1a3a7a';
+      c.fillRect(0, 0, s, s);
+      const rbRows = Math.max(4, Math.floor(s / 8));
+      c.fillStyle = '#0a2a5a';
+      for (let i = 0; i < rbRows; i++) c.fillRect(0, Math.floor(i * s / rbRows), s, 1);
+      for (let row = 0; row < rbRows; row++) {
+        const rbOff = row % 2 === 0 ? 0 : Math.floor(s * 0.25);
+        for (let col = rbOff; col < s; col += Math.floor(s * 0.5)) {
+          c.fillRect(col, Math.floor(row * s / rbRows), 1, Math.floor(s / rbRows));
+        }
+      }
+      const rbP = Math.floor(s * s / 100);
+      for (let i = 0; i < rbP; i++) {
+        c.fillStyle = ['#153570','#1f4585','#1a3a78'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      c.fillStyle = '#2a4a8a';
+      c.fillRect(0, 0, s, 1);
+      break;
+    }
+
+    // ===== ROOF YELLOW =====
+    case T.ROOF_YELLOW: {
+      c.fillStyle = '#b89020';
+      c.fillRect(0, 0, s, s);
+      const ryRows = Math.max(4, Math.floor(s / 8));
+      c.fillStyle = '#987010';
+      for (let i = 0; i < ryRows; i++) c.fillRect(0, Math.floor(i * s / ryRows), s, 1);
+      for (let row = 0; row < ryRows; row++) {
+        const ryOff = row % 2 === 0 ? 0 : Math.floor(s * 0.25);
+        for (let col = ryOff; col < s; col += Math.floor(s * 0.5)) {
+          c.fillRect(col, Math.floor(row * s / ryRows), 1, Math.floor(s / ryRows));
+        }
+      }
+      const ryP = Math.floor(s * s / 100);
+      for (let i = 0; i < ryP; i++) {
+        c.fillStyle = ['#a88018','#c8a028','#b08820'][Math.floor(rng() * 3)];
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
+      }
+      c.fillStyle = '#c8a030';
+      c.fillRect(0, 0, s, 1);
+      break;
+    }
+
+    // ===== BENCH =====
+    case T.BENCH: {
+      // Draw grass base first
+      c.fillStyle = '#3a7a2d';
+      c.fillRect(0, 0, s, s);
+      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232'], 0.1, rng);
+      // Bench seat
+      const bw = Math.floor(s * 0.8);
+      const bh = Math.floor(s * 0.3);
+      const bx = Math.floor((s - bw) / 2);
+      const by = Math.floor(s * 0.35);
+      c.fillStyle = '#7a5a30';
+      c.fillRect(bx, by, bw, bh);
+      c.fillStyle = '#5a3a18';
+      c.fillRect(bx, by + bh - 1, bw, 1);
+      // Legs
+      const lw = Math.floor(s * 0.08) || 1;
+      c.fillStyle = '#4a2a10';
+      c.fillRect(bx + Math.floor(bw * 0.15), by + bh, lw, Math.floor(s * 0.2));
+      c.fillRect(bx + Math.floor(bw * 0.75), by + bh, lw, Math.floor(s * 0.2));
+      // Back rest
+      c.fillStyle = '#8a6a38';
+      c.fillRect(bx, by - Math.floor(s * 0.12), bw, Math.floor(s * 0.12));
       break;
     }
 
@@ -1505,11 +1578,12 @@ function renderDetailedTile(c, tileType, variant, s) {
     default: {
       c.fillStyle = '#3a7a2d';
       c.fillRect(0, 0, s, s);
-      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232','#2e6a22'], 0.4, rng);
+      fillNoise(c, 0, 0, s, s, ['#347228','#3e8232'], 0.1, rng);
       break;
     }
   }
 }
+
 
 // ============= LOGIN/REGISTER =============
 const loginScreen = document.getElementById('login-screen');
@@ -1570,6 +1644,9 @@ socket.on('mapData', (data) => {
   if (data.quadrant) currentQuadrant = data.quadrant;
   if (data.quadrantName) currentQuadrantName = data.quadrantName;
   if (data.neighbors) quadrantNeighbors = data.neighbors;
+  // Load image objects
+  mapObjects = data.objects || [];
+  loadMapObjectImages();
   transitioning = false;
 });
 
@@ -1990,6 +2067,9 @@ function render() {
     }
   }
 
+  // Draw image objects on top of tiles
+  drawMapObjects();
+
   // Collect all entities and sort by Y for proper layering
   const entities = [];
 
@@ -2046,40 +2126,14 @@ function render() {
   drawMinimap();
 }
 
-// ============= TILE DRAWING (TIBIA STYLE) =============
+// ============= TILE DRAWING (SIMPLE CACHE-BASED) =============
+
 function drawTile(tx, ty, sx, sy) {
   if (!tileCacheBuilt) initTileCache();
   const tile = gameMap[ty][tx];
   const v = (tx * 7 + ty * 13) % TILE_VARIANTS;
-  const ts = tilesetImages.grassDirt;
 
-  // === GRASS with tileset transitions ===
-  if (GROUND_TILES.has(tile) && ts && ts.complete && ts.naturalWidth > 0) {
-    const idx = getGrassTransitionIndex(tx, ty);
-    const src = tilesetSrc(idx);
-    ctx.drawImage(ts, src.sx, src.sy, TSET_TILE, TSET_TILE, sx, sy, TILE_SIZE, TILE_SIZE);
-
-    // For non-plain grass tiles, overlay the object (flowers, mushroom, etc) from cache on top
-    if (tile !== T.GRASS) {
-      const key = tile + '_' + v;
-      const cached = tileCanvasCache[key];
-      if (cached) {
-        ctx.globalAlpha = 0.7;
-        ctx.drawImage(cached, 0, 0, cached.width, cached.height, sx, sy, TILE_SIZE, TILE_SIZE);
-        ctx.globalAlpha = 1;
-      }
-    }
-    return;
-  }
-
-  // === DIRT with tileset ===
-  if (tile === T.DIRT && ts && ts.complete && ts.naturalWidth > 0) {
-    const src = tilesetSrc(3); // pure dirt
-    ctx.drawImage(ts, src.sx, src.sy, TSET_TILE, TSET_TILE, sx, sy, TILE_SIZE, TILE_SIZE);
-    return;
-  }
-
-  // === WATER (animated) ===
+  // Water (animated)
   if (tile === T.WATER) {
     const key = 'water_' + waterAnimFrame + '_' + v;
     const cached = tileCanvasCache[key];
@@ -2089,7 +2143,7 @@ function drawTile(tx, ty, sx, sy) {
     }
   }
 
-  // === All other tiles from procedural cache ===
+  // All tiles from procedural cache
   const key = tile + '_' + v;
   const cached = tileCanvasCache[key];
   if (cached) {
@@ -2098,7 +2152,7 @@ function drawTile(tx, ty, sx, sy) {
   }
 
   // Fallback
-  ctx.fillStyle = '#3a7a2d';
+  ctx.fillStyle = '#3b8a2e';
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
 }
 
@@ -2689,6 +2743,10 @@ function drawMinimap() {
         case T.MUD: ctx.fillStyle = '#6b5030'; break;
         case T.HAY: ctx.fillStyle = '#c8a040'; break;
         case T.CHURCH_WALL: ctx.fillStyle = '#6a5a4a'; break;
+        case T.ROOF_RED: ctx.fillStyle = '#aa2020'; break;
+        case T.ROOF_BLUE: ctx.fillStyle = '#2050aa'; break;
+        case T.ROOF_YELLOW: ctx.fillStyle = '#c8a020'; break;
+        case T.BENCH: ctx.fillStyle = '#8a6a40'; break;
         default: ctx.fillStyle = '#000';
       }
       ctx.fillRect(mmX + tx * tileW, mmY + ty * tileH, Math.ceil(tileW), Math.ceil(tileH));

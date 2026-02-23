@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const Database = require('better-sqlite3');
@@ -219,6 +219,34 @@ try { db.exec("ALTER TABLE characters ADD COLUMN equipped_weapon2 TEXT DEFAULT '
 try { db.exec("ALTER TABLE accounts ADD COLUMN is_admin INTEGER DEFAULT 0"); } catch(e) {}
 // Add quadrant column for zone system
 try { db.exec("ALTER TABLE characters ADD COLUMN quadrant TEXT DEFAULT 'F5'"); } catch(e) {}
+// Add char name and hairstyle
+try { db.exec("ALTER TABLE characters ADD COLUMN char_name TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE characters ADD COLUMN hairstyle TEXT DEFAULT 'nenhum'"); } catch(e) {}
+try { db.exec("ALTER TABLE characters ADD COLUMN hair_color TEXT DEFAULT 'castanho'"); } catch(e) {}
+// Add slot_order to inventory for persistent slot positioning (0-19 = actual slot index)
+try { db.exec("ALTER TABLE inventory ADD COLUMN slot_order INTEGER DEFAULT 0"); } catch(e) {}
+// Add one-time hair change flag
+try { db.exec("ALTER TABLE characters ADD COLUMN can_change_hair INTEGER DEFAULT 0"); } catch(e) {}
+// Grant ntxs the one-time hair change
+(function grantNtxsHairChange() {
+  const acc = db.prepare("SELECT id FROM accounts WHERE username = 'ntxs'").get();
+  if (!acc) return;
+  const char = db.prepare('SELECT id FROM characters WHERE account_id = ?').get(acc.id);
+  if (char) db.prepare('UPDATE characters SET can_change_hair = 1 WHERE id = ? AND can_change_hair = 0').run(char.id);
+})();
+// Normalize slot_order to actual slot positions 0-29 per character (runs once if any value > 29)
+(function normalizeSlotOrder() {
+  const needsNorm = db.prepare('SELECT COUNT(*) as c FROM inventory WHERE slot_order > 29').get();
+  if (needsNorm.c > 0) {
+    const chars = db.prepare('SELECT DISTINCT character_id FROM inventory').all();
+    for (const c of chars) {
+      const rows = db.prepare('SELECT id FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(c.character_id);
+      for (let i = 0; i < rows.length; i++) {
+        db.prepare('UPDATE inventory SET slot_order = ? WHERE id = ?').run(i, rows[i].id);
+      }
+    }
+  }
+})();
 
 // Admin account
 const adminRow = db.prepare('SELECT id FROM accounts WHERE username = ?').get('admin');
@@ -273,25 +301,117 @@ const ITEMS = {
   },
   tunica_couro_simples: {
     id: 'tunica_couro_simples', name: 'Túnica de Couro Simples', type: 'chest',
-    defense: 2, icon: '/assets/icons/Armadura de Couro Simples/tunicacourosimples.png',
+    defense: 2, icon: '/assets/icons/armaduras/tunicacourosimples.png',
     description: 'Uma túnica feita de couro simples. Defesa: +2'
   },
   chapeu_couro_simples: {
     id: 'chapeu_couro_simples', name: 'Chapéu de Couro Simples', type: 'helmet',
-    defense: 1, icon: '/assets/icons/Armadura de Couro Simples/chapeucourosimples.png',
+    defense: 1, icon: '/assets/icons/armaduras/chapeucourosimples.png',
     description: 'Um chapéu feito de couro simples. Defesa: +1'
   },
   bota_couro_simples: {
     id: 'bota_couro_simples', name: 'Bota de Couro Simples', type: 'boots',
-    defense: 1, icon: '/assets/icons/Armadura de Couro Simples/botacourosimples.png',
+    defense: 1, icon: '/assets/icons/armaduras/botacourosimples.png',
     description: 'Botas feitas de couro simples. Defesa: +1'
   },
   calca_couro_simples: {
     id: 'calca_couro_simples', name: 'Calça de Couro Simples', type: 'legs',
-    defense: 1, icon: '/assets/icons/Armadura de Couro Simples/calcacourosimples.png',
+    defense: 1, icon: '/assets/icons/armaduras/calcacourosimples.png',
     description: 'Uma calça feita de couro simples. Defesa: +1'
+  },
+  peitoral_ferro_simples: {
+    id: 'peitoral_ferro_simples', name: 'Peitoral de Ferro Simples', type: 'chest',
+    defense: 5, price: 100, icon: '/assets/icons/armaduras/peitoralsimplesicone.png',
+    description: 'Um peitoral de ferro forjado pelo ferreiro. Defesa: +5'
+  },
+  bota_ferro_simples: {
+    id: 'bota_ferro_simples', name: 'Bota de Ferro Simples', type: 'boots',
+    defense: 0, price: 1, icon: '/assets/icons/armaduras/iconebotaferrosimples.png',
+    description: 'Botas de ferro simples forjadas pelo ferreiro.'
+  },
+  peitoral_ferro: {
+    id: 'peitoral_ferro', name: 'Peitoral de Ferro', type: 'chest',
+    defense: 0, price: 1, icon: '/assets/icons/armaduras/iconepeitoralferro.png',
+    description: 'Um peitoral de ferro forjado pelo ferreiro.'
+  },
+  elmo_ferro_simples: {
+    id: 'elmo_ferro_simples', name: 'Elmo de Ferro Simples', type: 'helmet',
+    defense: 0, price: 1, icon: '/assets/icons/armaduras/iconeelmoferrosimples.png',
+    description: 'Um elmo de ferro simples forjado pelo ferreiro.'
+  },
+  elmo_ferro: {
+    id: 'elmo_ferro', name: 'Elmo de Ferro', type: 'helmet',
+    defense: 0, price: 1, icon: '/assets/icons/armaduras/iconeelmoferro.png',
+    description: 'Um elmo de ferro forjado pelo ferreiro.'
+  },
+  // ===== ITENS DO BOSS ESQUELETO =====
+  peitoral_ossos: {
+    id: 'peitoral_ossos', name: 'Peitoral de Ossos', type: 'chest',
+    rarity: 'uncommon', defense: 0, icon: '/assets/icons/bossesqueleto/iconepeitoralossos.png',
+    description: 'Um peitoral feito de ossos do Boss Esqueleto. (Incomum)'
+  },
+  ombreiras_boss_esqueleto: {
+    id: 'ombreiras_boss_esqueleto', name: 'Ombreira Boss Esqueleto', type: 'chest',
+    rarity: 'common', defense: 0, icon: '/assets/icons/bossesqueleto/iconeombreirasbossesqueleto.png',
+    description: 'Ombreiras do Boss Esqueleto. (Comum)'
+  },
+  peitoral_boss_esqueleto: {
+    id: 'peitoral_boss_esqueleto', name: 'Peitoral Boss Esqueleto', type: 'chest',
+    rarity: 'uncommon', defense: 0, icon: '/assets/icons/bossesqueleto/iconepeitoralbossesqueleto.png',
+    description: 'Peitoral do Boss Esqueleto. (Incomum)'
+  },
+  peitoral_boss_esqueleto_capa: {
+    id: 'peitoral_boss_esqueleto_capa', name: 'Peitoral Boss Esqueleto com Capa', type: 'chest',
+    rarity: 'rare', defense: 0, icon: '/assets/icons/bossesqueleto/iconepeitoralbossesqueleto.png',
+    description: 'Peitoral do Boss Esqueleto com capa imponente. (Raro)', hasCape: true
+  },
+  capacete_ossos: {
+    id: 'capacete_ossos', name: 'Capacete de Ossos', type: 'helmet',
+    rarity: 'common', defense: 0, icon: '/assets/icons/bossesqueleto/iconeelmoossos1.png',
+    description: 'Um capacete feito de ossos. (Comum)'
+  },
+  elmo_ossos: {
+    id: 'elmo_ossos', name: 'Elmo de Ossos', type: 'helmet',
+    rarity: 'uncommon', defense: 0, icon: '/assets/icons/bossesqueleto/iconeelmoossos2.png',
+    description: 'Um elmo de ossos reforçado. (Incomum)'
+  },
+  elmo_caveira: {
+    id: 'elmo_caveira', name: 'Elmo Caveira', type: 'helmet',
+    rarity: 'rare', defense: 0, icon: '/assets/icons/bossesqueleto/iconeelmoossos3.png',
+    description: 'Um elmo com formato de caveira. Defesa extra. (Raro)'
+  },
+  lanca_ossos: {
+    id: 'lanca_ossos', name: 'Lança de Ossos', type: 'weapon',
+    rarity: 'uncommon', hands: 2, damage: 4, attackCooldown: 1250, range: 3, firstHitMult: 1.5,
+    icon: '/assets/icons/bossesqueleto/iconelancaossos.png',
+    description: 'Lança de ossos. 2 mãos. Alcance +1 tile, 1° golpe 1.5x dano, 25% mais lenta. (Incomum)'
+  },
+  adagas_ossos: {
+    id: 'adagas_ossos', name: 'Adagas de Ossos', type: 'weapon',
+    rarity: 'uncommon', hands: 2, damage: 3, attackCooldown: 667,
+    icon: '/assets/icons/bossesqueleto/iconeadagaossos.png',
+    description: 'Adagas de ossos velozes. 2 mãos. 0.75x dano, 1.5x mais rápidas. (Incomum)'
+  },
+  espada_ossos: {
+    id: 'espada_ossos', name: 'Espada de Ossos', type: 'weapon',
+    rarity: 'uncommon', hands: 1, damage: 4, attackCooldown: 1000,
+    icon: '/assets/icons/bossesqueleto/iconeespadaossos.png',
+    description: 'Uma espada forjada com ossos do Boss Esqueleto. (Incomum)'
+  },
+  calca_boss_esqueleto: {
+    id: 'calca_boss_esqueleto', name: 'Calça do Boss Esqueleto', type: 'legs',
+    rarity: 'uncommon', defense: 0,
+    icon: '/assets/icons/bossesqueleto/iconecalcabossesqueleto.png',
+    description: 'Calça do Boss Esqueleto. (Incomum)'
   }
 };
+
+// Pool de loot do Boss Esqueleto (2 itens aleatórios ao morrer)
+const BOSS_LOOT_POOL = [
+  'peitoral_ossos', 'ombreiras_boss_esqueleto', 'peitoral_boss_esqueleto',
+  'peitoral_boss_esqueleto_capa', 'capacete_ossos', 'elmo_ossos', 'elmo_caveira',
+  'lanca_ossos', 'adagas_ossos', 'espada_ossos', 'calca_boss_esqueleto'
+];
 
 // Receitas de crafting do Artesão
 const CRAFT_RECIPES = {
@@ -420,8 +540,14 @@ const NPC_DEFS = [
   { id: 'paladino', name: 'Paladino', x: 55, y: 50, sprite: 'paladino', questId: 'paladino_quest',
     dialog: 'Saudações, aventureiro!', quadrant: 'E5' },
   { id: 'ferreiro', name: 'Ferreiro', x: 45, y: 55, sprite: 'ferreiro', questId: null,
-    dialog: 'Bem-vindo Ã  minha ferraria! Infelizmente ainda não tenho equipamentos para venda. Volte em breve!',
-    isShop: true, shopItems: [], quadrant: 'E5' },
+    dialog: 'Bem-vindo à minha ferraria! O que posso forjar para você hoje?',
+    isShop: true, shopItems: [
+      { itemId: 'peitoral_ferro_simples', price: 100 },
+      { itemId: 'bota_ferro_simples', price: 1 },
+      { itemId: 'peitoral_ferro', price: 1 },
+      { itemId: 'elmo_ferro_simples', price: 1 },
+      { itemId: 'elmo_ferro', price: 1 }
+    ], quadrant: 'E5' },
   { id: 'artesao', name: 'Artesão', x: 55, y: 55, sprite: 'artesao', questId: null,
     dialog: 'Bem-vindo Ã  minha oficina! Traga-me materiais e eu posso criar equipamentos para você.',
     isCrafter: true, quadrant: 'E5' }
@@ -431,9 +557,11 @@ const NPC_DEFS = [
 // QUADRANT DEFINITIONS
 // ============================
 const QUADRANTS = {
-  E5: { id: 'E5', name: 'Vila de Testes', neighbors: { left: 'E4', right: null, up: null, down: 'F5' }, spawnX: 50, spawnY: 95 },
+  E5: { id: 'E5', name: 'Vila de Testes', neighbors: { left: 'E4', right: null, up: 'D5', down: 'F5' }, spawnX: 50, spawnY: 50 },
   E4: { id: 'E4', name: 'Planície Verde', neighbors: { left: null, right: 'E5', up: null, down: null }, spawnX: 90, spawnY: 50 },
   F5: { id: 'F5', name: 'Cidade de Origens', neighbors: { left: null, right: null, up: 'E5', down: null }, spawnX: 50, spawnY: 5 },
+  D5: { id: 'D5', name: 'Planície do Norte', neighbors: { left: null, right: null, up: 'C5', down: 'E5' }, spawnX: 50, spawnY: 95 },
+  C5: { id: 'C5', name: 'Planície do Horizonte', neighbors: { left: null, right: null, up: null, down: 'D5' }, spawnX: 50, spawnY: 95 },
   IGREJA: { id: 'IGREJA', name: 'Igreja', neighbors: { left: null, right: null, up: null, down: null }, spawnX: 3, spawnY: 6, mapW: 7, mapH: 8 }
 };
 
@@ -456,7 +584,7 @@ const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE_CARVALHO:
   GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41,
   ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45,
   TREE_BETULA:46, TREE_CARVALHO_SMALL:47, TREE_MAGICA:48, TREE_MANGUE:49, TREE_PINHEIRO:50, TREE_PINOS:51,
-  WATER_RIVER:52 };
+  WATER_RIVER:52, DEAD_GRASS:53, DEAD_DIRT:54 };
 const BLOCKED_TILES = new Set([T.STONE_WALL, T.WATER, T.WATER_RIVER, T.TREE_CARVALHO, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
   T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL, T.BENCH,
   T.TREE_BETULA, T.TREE_CARVALHO_SMALL, T.TREE_MAGICA, T.TREE_MANGUE, T.TREE_PINHEIRO, T.TREE_PINOS]);
@@ -758,6 +886,154 @@ function buildWalls(map, sx, sy, w, h, wallTile, floorTile) {
 
 // ============================
 // E4 MAP - PLANÃCIE VERDE
+// ============================
+// ============================
+// D5 MAP - PLANÍCIE DO NORTE
+// ============================
+function generateMapD5() {
+  const map = Array.from({length: MAP_H}, () => Array(MAP_W).fill(T.GRASS));
+  const rng = mulberry32(211);
+
+  // Tree border: fechado nas laterais, aberto em cima (C5) e embaixo (E5) no centro
+  for (let y = 0; y < MAP_H; y++)
+    for (let x = 0; x < MAP_W; x++) {
+      if (x < 3) map[y][x] = T.TREE_CARVALHO;
+      if (x >= MAP_W - 3) map[y][x] = T.TREE_CARVALHO;
+      // Borda de cima: fechada exceto passagem central (x 45-55)
+      if (y < 3 && (x < 45 || x > 55)) map[y][x] = T.TREE_CARVALHO;
+      // Borda de baixo: fechada exceto passagem central (x 45-55)
+      if (y >= MAP_H - 3 && (x < 45 || x > 55)) map[y][x] = T.TREE_CARVALHO;
+    }
+
+  // Caminho de terra conectando sul (E5) ao norte (C5)
+  for (let y = 0; y < MAP_H; y++) {
+    map[y][48] = T.DIRT; map[y][49] = T.STONE_PATH; map[y][50] = T.STONE_PATH;
+    map[y][51] = T.STONE_PATH; map[y][52] = T.DIRT;
+  }
+
+  // Riacho cruzando o mapa horizontalmente
+  for (let x = 3; x < MAP_W - 3; x++) {
+    if (x >= 46 && x <= 54) continue; // pula o caminho
+    const wy = 45 + Math.floor(Math.sin(x * 0.18) * 3);
+    map[wy][x] = T.WATER_RIVER;
+    map[wy + 1][x] = T.WATER_RIVER;
+    if (x < 45 || x > 55) { map[wy - 1][x] = T.SAND; map[wy + 2][x] = T.SAND; }
+  }
+
+  // Decoração de planície
+  for (let i = 0; i < 600; i++) {
+    const tx = 4 + Math.floor(rng() * (MAP_W - 8));
+    const ty = 4 + Math.floor(rng() * (MAP_H - 8));
+    if (map[ty][tx] !== T.GRASS) continue;
+    const r = rng();
+    if (r < 0.22) map[ty][tx] = T.FLOWERS;
+    else if (r < 0.42) map[ty][tx] = T.TALL_GRASS;
+    else if (r < 0.46) map[ty][tx] = T.BUSH;
+    else if (r < 0.48) map[ty][tx] = T.ROCK;
+    else if (r < 0.50) map[ty][tx] = T.MUSHROOM;
+    else if (r < 0.52) map[ty][tx] = T.TREE_CARVALHO_SMALL;
+  }
+
+  // Manchas de grama escura
+  for (let i = 0; i < 250; i++) {
+    const tx = 4 + Math.floor(rng() * (MAP_W - 8));
+    const ty = 4 + Math.floor(rng() * (MAP_H - 8));
+    if (map[ty][tx] === T.GRASS) map[ty][tx] = T.DARK_GRASS;
+  }
+
+  // Pequeno lago ao noroeste
+  for (let y = 18; y <= 30; y++)
+    for (let x = 10; x <= 22; x++) {
+      const d = Math.sqrt((x - 16) ** 2 + (y - 24) ** 2);
+      const noise = Math.sin(x * 0.6) * 0.5 + Math.cos(y * 0.8) * 0.4;
+      if (d + noise < 4) map[y][x] = T.WATER;
+      else if (d + noise < 5.2 && map[y][x] === T.GRASS) map[y][x] = T.SAND;
+    }
+
+  // Grupo de árvores a nordeste
+  for (let i = 0; i < 40; i++) {
+    const tx = 60 + Math.floor(rng() * 30);
+    const ty = 10 + Math.floor(rng() * 25);
+    if (tx < MAP_W - 3 && ty < MAP_H - 3) map[ty][tx] = T.TREE_BETULA;
+  }
+
+  return map;
+}
+
+// ============================
+// C5 MAP - PLANÍCIE DO HORIZONTE
+// ============================
+function generateMapC5() {
+  const map = Array.from({length: MAP_H}, () => Array(MAP_W).fill(T.GRASS));
+  const rng = mulberry32(317);
+
+  // Tree border: fechado em todos os lados exceto sul (D5) no centro
+  for (let y = 0; y < MAP_H; y++)
+    for (let x = 0; x < MAP_W; x++) {
+      if (x < 3) map[y][x] = T.TREE_PINHEIRO;
+      if (x >= MAP_W - 3) map[y][x] = T.TREE_PINHEIRO;
+      if (y < 3) map[y][x] = T.TREE_PINHEIRO;
+      // Borda de baixo: fechada exceto passagem central (x 45-55)
+      if (y >= MAP_H - 3 && (x < 45 || x > 55)) map[y][x] = T.TREE_PINHEIRO;
+    }
+
+  // Caminho de terra conectando ao sul (D5)
+  for (let y = 0; y < MAP_H; y++) {
+    map[y][48] = T.DIRT; map[y][49] = T.STONE_PATH; map[y][50] = T.STONE_PATH;
+    map[y][51] = T.STONE_PATH; map[y][52] = T.DIRT;
+  }
+
+  // Grande lago ao centro-norte
+  for (let y = 20; y <= 42; y++)
+    for (let x = 25; x <= 45; x++) {
+      const d = Math.sqrt((x - 35) ** 2 + (y - 31) ** 2);
+      const noise = Math.sin(x * 0.4) * 0.8 + Math.cos(y * 0.5) * 0.6;
+      if (d + noise < 8) map[y][x] = T.WATER;
+      else if (d + noise < 9.5 && map[y][x] === T.GRASS) map[y][x] = T.SAND;
+    }
+
+  // Decoração de planície aberta
+  for (let i = 0; i < 700; i++) {
+    const tx = 4 + Math.floor(rng() * (MAP_W - 8));
+    const ty = 4 + Math.floor(rng() * (MAP_H - 8));
+    if (map[ty][tx] !== T.GRASS) continue;
+    const r = rng();
+    if (r < 0.25) map[ty][tx] = T.FLOWERS;
+    else if (r < 0.48) map[ty][tx] = T.TALL_GRASS;
+    else if (r < 0.52) map[ty][tx] = T.BUSH;
+    else if (r < 0.54) map[ty][tx] = T.ROCK;
+    else if (r < 0.56) map[ty][tx] = T.MUSHROOM;
+    else if (r < 0.59) map[ty][tx] = T.TREE_CARVALHO_SMALL;
+  }
+
+  // Manchas de grama escura abundantes (planície mais selvagem)
+  for (let i = 0; i < 350; i++) {
+    const tx = 4 + Math.floor(rng() * (MAP_W - 8));
+    const ty = 4 + Math.floor(rng() * (MAP_H - 8));
+    if (map[ty][tx] === T.GRASS) map[ty][tx] = T.DARK_GRASS;
+  }
+
+  // Floresta de pinheiros a leste
+  for (let i = 0; i < 60; i++) {
+    const tx = 65 + Math.floor(rng() * 28);
+    const ty = 20 + Math.floor(rng() * 50);
+    if (tx < MAP_W - 3 && ty > 3 && ty < MAP_H - 3) map[ty][tx] = T.TREE_PINHEIRO;
+  }
+
+  // Ruínas (pedras e gravetos) no canto sudoeste
+  for (let i = 0; i < 20; i++) {
+    const tx = 8 + Math.floor(rng() * 20);
+    const ty = 65 + Math.floor(rng() * 25);
+    if (tx < MAP_W - 3 && ty < MAP_H - 3 && map[ty][tx] === T.GRASS) {
+      map[ty][tx] = rng() < 0.5 ? T.ROCK : T.GRAVESTONE;
+    }
+  }
+
+  return map;
+}
+
+// ============================
+// E4 MAP - PLANÍCIE VERDE
 // ============================
 function generateMapE4() {
   const map = Array.from({length: MAP_H}, () => Array(MAP_W).fill(T.GRASS));
@@ -1301,12 +1577,16 @@ const gameMaps = {
   E5: loadMapFromDisk('E5') || f5Result.map,
   E4: loadMapFromDisk('E4') || generateMapE4(),
   F5: loadMapFromDisk('F5') || e5Result.map,
+  D5: loadMapFromDisk('D5') || generateMapD5(),
+  C5: loadMapFromDisk('C5') || generateMapC5(),
   IGREJA: loadMapFromDisk('IGREJA') || igrejaResult.map
 };
 const gameBuildings = {
   E5: f5Result.buildings,
   E4: [],
   F5: e5Result.buildings,
+  D5: [],
+  C5: [],
   IGREJA: igrejaResult.buildings
 };
 
@@ -1315,6 +1595,8 @@ const gameMapObjects = {
   E5: loadObjectsFromDisk('E5') || [],
   E4: loadObjectsFromDisk('E4') || [],
   F5: loadObjectsFromDisk('F5') || [],
+  D5: loadObjectsFromDisk('D5') || [],
+  C5: loadObjectsFromDisk('C5') || [],
   IGREJA: loadObjectsFromDisk('IGREJA') || []
 };
 
@@ -1323,6 +1605,8 @@ const solidCells = {
   E5: loadSolidCellsFromDisk('E5') || new Set(),
   E4: loadSolidCellsFromDisk('E4') || new Set(),
   F5: loadSolidCellsFromDisk('F5') || new Set(),
+  D5: loadSolidCellsFromDisk('D5') || new Set(),
+  C5: loadSolidCellsFromDisk('C5') || new Set(),
   IGREJA: loadSolidCellsFromDisk('IGREJA') || new Set()
 };
 
@@ -1331,6 +1615,8 @@ const behindCells = {
   E5: loadBehindCellsFromDisk('E5') || new Set(),
   E4: loadBehindCellsFromDisk('E4') || new Set(),
   F5: loadBehindCellsFromDisk('F5') || new Set(),
+  D5: loadBehindCellsFromDisk('D5') || new Set(),
+  C5: loadBehindCellsFromDisk('C5') || new Set(),
   IGREJA: loadBehindCellsFromDisk('IGREJA') || new Set()
 };
 
@@ -1339,6 +1625,8 @@ const mobSpawns = {
   E5: loadSpawnsFromDisk('E5') || [],
   E4: loadSpawnsFromDisk('E4') || [],
   F5: loadSpawnsFromDisk('F5') || [],
+  D5: loadSpawnsFromDisk('D5') || [],
+  C5: loadSpawnsFromDisk('C5') || [],
   IGREJA: loadSpawnsFromDisk('IGREJA') || []
 };
 
@@ -1722,10 +2010,9 @@ function spawnEnemies() {
     }
   }
 
-  // Fallback: if no editor spawns exist for E5, use hardcoded defaults
-  const e5Spawns = mobSpawns['F5'] || [];
-  if (e5Spawns.length === 0) {
-    // E5 - Esqueletos (cemitério)
+  // Fallback: spawn skeletons/slimes in F5 if no editor spawns for those types
+  const f5SkeletonSpawns = (mobSpawns['F5'] || []).filter(s => s.type === 'skeleton');
+  if (f5SkeletonSpawns.length === 0) {
     for (let i = 0; i < 8; i++) {
       let x, y, attempts = 0;
       do { x = 76 + Math.floor(rng() * 13); y = 11 + Math.floor(rng() * 14); attempts++; }
@@ -1737,7 +2024,9 @@ function spawnEnemies() {
         quadrant: 'F5'
       });
     }
-    // E5 - Slimes (fazenda)
+  }
+  const f5SlimeSpawns = (mobSpawns['F5'] || []).filter(s => s.type === 'slime');
+  if (f5SlimeSpawns.length === 0) {
     for (let i = 0; i < 8; i++) {
       let x, y, attempts = 0;
       do { x = 9 + Math.floor(rng() * 14); y = 76 + Math.floor(rng() * 9); attempts++; }
@@ -1751,9 +2040,9 @@ function spawnEnemies() {
     }
   }
 
-  // Fallback: if no editor spawns exist for F5, spawn slimes on MUD tiles
-  const f5Spawns = mobSpawns['E5'] || [];
-  if (f5Spawns.length === 0 && gameMaps['E5']) {
+  // Fallback: spawn slimes on MUD tiles in E5 if no editor slime spawns there
+  const e5SlimeSpawns = (mobSpawns['E5'] || []).filter(s => s.type === 'slime');
+  if (e5SlimeSpawns.length === 0 && gameMaps['E5']) {
     const mudTiles = [];
     for (let y = 0; y < MAP_H; y++)
       for (let x = 0; x < MAP_W; x++)
@@ -1795,6 +2084,40 @@ function spawnEnemies() {
 spawnEnemies();
 
 // ============================
+// BOSS SKELETON - C5 (x50, y10)
+// ============================
+const bossSpells = [];
+let bossSpellIdCounter = 0;
+enemies.push({
+  id: 'boss_c5',
+  type: 'bossskeleton',
+  quadrant: 'C5',
+  x: 50, y: 10,
+  spawnX: 50, spawnY: 10,
+  hp: 150, maxHp: 150,
+  damage: 15,
+  dead: false, deathTime: 0,
+  direction: 'right', moving: false,
+  bossState: 'idle',   // 'idle' | 'aggroed' | 'attack1' | 'attack2'
+  animState: 'boss1',
+  idleFlipTimer: 0,
+  nextAttackTime: 0,
+  regenTimer: 0,
+  // Attack 1 (spawn skeletons)
+  a1SpawnedCount: 0,
+  a1NextSpawnTime: 0,
+  a1Boss4Until: 0,
+  // Attack 2 (spells)
+  a2CastCount: 0,
+  a2NextCastTime: 0,
+  a2Boss6Until: 0,
+  // Loot
+  lootReady: false,
+  lootCollectorId: null,
+  lootCollectStart: 0,
+});
+
+// ============================
 // GROUND ITEMS
 // ============================
 const groundItems = [];
@@ -1833,12 +2156,13 @@ function saveCharacter(p) {
     strength=?, intelligence=?, vitality=?, defense=?, luck=?, skill_points=?,
     equipped_weapon=?, equipped_armor=?, equipped_helmet=?, equipped_chest=?,
     equipped_legs=?, equipped_boots=?, equipped_ring1=?, equipped_ring2=?,
-    equipped_weapon2=?, direction=?, quadrant=? WHERE id=?`).run(
+    equipped_weapon2=?, direction=?, quadrant=?, char_name=?, hairstyle=?, hair_color=? WHERE id=?`).run(
     p.x, p.y, p.hp, p.max_hp, p.level, p.xp, p.silver,
     p.strength, p.intelligence, p.vitality, p.defense, p.luck, p.skill_points,
     p.equipped_weapon, p.equipped_armor, p.equipped_helmet || '', p.equipped_chest || '',
     p.equipped_legs || '', p.equipped_boots || '', p.equipped_ring1 || '', p.equipped_ring2 || '',
-    p.equipped_weapon2 || '', p.direction, p.quadrant || 'F5', p.charId
+    p.equipped_weapon2 || '', p.direction, p.quadrant || 'F5',
+    p.char_name || '', p.hairstyle || 'nenhum', p.hair_color || 'castanho', p.charId
   );
 }
 
@@ -1909,11 +2233,12 @@ function sendFullState(p) {
     equipped_ring1: p.equipped_ring1 || '', equipped_ring2: p.equipped_ring2 || '',
     equipped_weapon2: p.equipped_weapon2 || '',
     direction: p.direction, isAdmin: p.isAdmin,
-    quadrant: p.quadrant || 'F5'
+    quadrant: p.quadrant || 'F5',
+    char_name: p.char_name || '', hairstyle: p.hairstyle || 'nenhum', hair_color: p.hair_color || 'castanho'
   });
   // Send inventory
-  const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
-  p.socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
+  const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+  p.socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
   // Send quests
   const quests = db.prepare('SELECT * FROM quests WHERE character_id = ?').all(p.charId);
   p.socket.emit('questsUpdate', quests.map(q => ({ ...q, ...QUEST_DEFS[q.quest_id] })));
@@ -1925,7 +2250,7 @@ function sendFullState(p) {
 io.on('connection', (socket) => {
   console.log('Conexão:', socket.id);
 
-  socket.on('register', ({ username, password }, cb) => {
+  socket.on('register', ({ username, password, charName, hairstyle, hair_color: req_hair_color }, cb) => {
     if (!username || !password || username.length < 3 || password.length < 4) {
       return cb({ error: 'Nome deve ter 3+ caracteres e senha 4+ caracteres.' });
     }
@@ -1933,7 +2258,10 @@ io.on('connection', (socket) => {
     if (exists) return cb({ error: 'Este nome já está em uso! Escolha outro.' });
     const hash = bcrypt.hashSync(password, 10);
     const res = db.prepare('INSERT INTO accounts (username, password_hash) VALUES (?, ?)').run(username, hash);
-    db.prepare('INSERT INTO characters (account_id) VALUES (?)').run(res.lastInsertRowid);
+    const cName = (charName || username).trim().slice(0, 20);
+    const cHair = hairstyle || 'nenhum';
+    const cHairColor = req_hair_color || 'castanho';
+    db.prepare('INSERT INTO characters (account_id, char_name, hairstyle, hair_color) VALUES (?, ?, ?, ?)').run(res.lastInsertRowid, cName, cHair, cHairColor);
     cb({ success: true });
   });
 
@@ -1971,7 +2299,9 @@ io.on('connection', (socket) => {
       direction: char.direction || 'right',
       moving: false, lastCombatTime: 0, lastRegenTime: Date.now(),
       targetId: null, lastAttackTime: 0,
-      quadrant: playerQuadrant
+      quadrant: playerQuadrant,
+      char_name: char.char_name || '', hairstyle: char.hairstyle || 'nenhum',
+      hair_color: char.hair_color || 'castanho'
     };
     p.max_hp = 25 + p.vitality;
     if (p.hp > p.max_hp) p.hp = p.max_hp;
@@ -1982,7 +2312,21 @@ io.on('connection', (socket) => {
     socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === playerQuadrant));
     sendFullState(p);
     io.emit('chat', { sender: 'Sistema', message: `${p.username} entrou no jogo.`, color: '#8f8' });
-    cb({ success: true });
+    const needsHairstyle = char.can_change_hair === 1;
+    if (needsHairstyle) {
+      db.prepare('UPDATE characters SET can_change_hair = 0 WHERE id = ?').run(char.id);
+    }
+    cb({ success: true, needsHairstyle, hairstyle: char.hairstyle || 'nenhum', hair_color: char.hair_color || 'castanho' });
+  });
+
+  socket.on('setHairstyle', ({ hairstyle, hair_color }, cb) => {
+    const p = players[socket.id];
+    if (!p) return cb && cb({ error: 'Não autenticado.' });
+    if (hairstyle) p.hairstyle = hairstyle;
+    if (hair_color) p.hair_color = hair_color;
+    db.prepare('UPDATE characters SET hairstyle = ?, hair_color = ? WHERE id = ?').run(p.hairstyle, p.hair_color || 'castanho', p.charId);
+    sendFullState(p);
+    if (cb) cb({ success: true });
   });
 
   socket.on('move', (data) => {
@@ -2029,8 +2373,8 @@ io.on('connection', (socket) => {
     // Reposition player on the opposite edge, preserving the other axis
     if (direction === 'left') { p.x = nqW - 4; /* keep p.y */ }
     else if (direction === 'right') { p.x = 4; /* keep p.y */ }
-    else if (direction === 'up') { p.y = nqH - 4; /* keep p.x */ }
-    else if (direction === 'down') { p.y = 4; /* keep p.x */ }
+    else if (direction === 'up') { p.y = nqH - 6; /* keep p.x */ }
+    else if (direction === 'down') { p.y = 6; /* keep p.x */ }
     // Ensure player lands on a non-blocked tile
     const safe = findSafePosition(p.x, p.y, newQuadrant);
     p.x = safe.x;
@@ -2044,19 +2388,78 @@ io.on('connection', (socket) => {
     socket.emit('chat', { sender: 'Sistema', message: `Entrou em ${newQDef.name} [${newQuadrant}]`, color: '#aaddff' });
   });
 
+  // Boss loot collection
+  socket.on('startBossLoot', () => {
+    const p = players[socket.id];
+    if (!p) return;
+    const boss = enemies.find(e => e.id === 'boss_c5');
+    if (!boss || !boss.dead || !boss.lootReady) return;
+    const dist = Math.sqrt((p.x - boss.x)**2 + (p.y - boss.y)**2);
+    if (dist > 3) return;
+    boss.lootCollectorId = socket.id;
+    boss.lootCollectStart = Date.now();
+  });
+
+  socket.on('cancelBossLoot', () => {
+    const boss = enemies.find(e => e.id === 'boss_c5');
+    if (!boss) return;
+    if (boss.lootCollectorId === socket.id) {
+      boss.lootCollectorId = null;
+      boss.lootCollectStart = 0;
+    }
+  });
+
+  socket.on('collectBossLoot', () => {
+    const p = players[socket.id];
+    if (!p) return;
+    const boss = enemies.find(e => e.id === 'boss_c5');
+    if (!boss || !boss.dead || !boss.lootReady) return;
+    if (boss.lootCollectorId !== socket.id) return;
+    if (Date.now() - boss.lootCollectStart < 4800) return;
+    // Drop 2 itens aleatórios do pool do Boss Esqueleto
+    const silverAmt = 50 + Math.floor(Math.random() * 51);
+    p.silver += silverAmt;
+    const shuffledPool = [...BOSS_LOOT_POOL].sort(() => Math.random() - 0.5);
+    const droppedItems = shuffledPool.slice(0, 2);
+    for (const itemId of droppedItems) {
+      addItemToInventory(p.charId, itemId, 1);
+    }
+    const itemNames = droppedItems.map(id => ITEMS[id] ? ITEMS[id].name : id).join(', ');
+    socket.emit('chat', { sender: 'Sistema', message: `Você coletou o loot do Boss: ${silverAmt} Pratas + ${itemNames}!`, color: '#ffd700' });
+    sendFullState(p);
+    saveCharacter(p);
+    boss.lootReady = false;
+    boss.lootCollectorId = null;
+  });
+
   socket.on('attack', ({ targetId }) => {
     try {
     const p = players[socket.id];
     if (!p || p.hp <= 0) return;
     const now = Date.now();
-    if (now - p.lastAttackTime < 1000) return; // cooldown
+    // Cooldown baseado na arma equipada
+    const wepData = p.equipped_weapon && ITEMS[p.equipped_weapon] ? ITEMS[p.equipped_weapon] : null;
+    const wepCooldown = wepData && wepData.attackCooldown ? wepData.attackCooldown : 1000;
+    if (now - p.lastAttackTime < wepCooldown) return; // cooldown
     const enemy = enemies.find(e => e.id === targetId && e.quadrant === p.quadrant);
     if (!enemy || enemy.dead) return;
+    // Alcance baseado na arma equipada (lança tem +1 tile)
+    const wepRange = wepData && wepData.range ? wepData.range : 2;
+    const attackRange = enemy.type === 'bossskeleton' ? 4 : wepRange;
     const dist = Math.sqrt((p.x - enemy.x)**2 + (p.y - enemy.y)**2);
-    if (dist > 2) return; // out of range
+    if (dist > attackRange) return; // out of range
     p.lastAttackTime = now;
     p.lastCombatTime = now;
-    const dmg = getPlayerDamage(p);
+    // Dano com multiplicador de primeiro golpe para armas com firstHitMult (ex: lança)
+    let dmg = getPlayerDamage(p);
+    if (wepData && wepData.firstHitMult) {
+      if (!enemy.lastHitBy) enemy.lastHitBy = {};
+      const lastHit = enemy.lastHitBy[socket.id] || 0;
+      if (now - lastHit > 10000) { // primeiro golpe (>10s sem atacar este inimigo)
+        dmg = Math.round(dmg * wepData.firstHitMult);
+      }
+      enemy.lastHitBy[socket.id] = now;
+    }
     enemy.hp -= dmg;
     // Track hit time for cow flee behavior
     if (enemy.type === 'cow') {
@@ -2067,6 +2470,18 @@ io.on('connection', (socket) => {
     if (enemy.hp <= 0) {
       enemy.dead = true;
       enemy.deathTime = now;
+      // Boss special death
+      if (enemy.type === 'bossskeleton') {
+        enemy.lootReady = true;
+        enemy.animState = 'boss7';
+        bossSpells.length = 0;
+        const xpGain = 500;
+        grantXP(p, xpGain);
+        socket.emit('loot', { enemyId: targetId, loot: ['Pressione F para coletar o loot!'], silver: p.silver, xpGain, x: enemy.x, y: enemy.y });
+        io.emit('chat', { sender: 'Sistema', message: `O Boss Esqueleto foi derrotado por ${p.username}!`, color: '#ffd700' });
+        saveCharacter(p);
+        return;
+      }
       // Loot
       let loot = [];
       if (enemy.type === 'zombie') {
@@ -2102,8 +2517,8 @@ io.on('connection', (socket) => {
       // Quest progress
       updateQuestProgress(p, enemy.type);
       // Refresh inventory
-      const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
-      socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
+      const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+      socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
       sendFullState(p);
     }
     } catch (err) {
@@ -2118,6 +2533,15 @@ io.on('connection', (socket) => {
     if (!npc) return;
     const dist = Math.sqrt((p.x - npc.x)**2 + (p.y - npc.y)**2);
     if (dist > 3) return;
+    // Ferreiro shop
+    if (npc.isShop) {
+      const shopData = npc.shopItems.map(si => {
+        const itemDef = ITEMS[si.itemId];
+        return { itemId: si.itemId, price: si.price, name: itemDef ? itemDef.name : si.itemId, icon: itemDef ? itemDef.icon : null, description: itemDef ? itemDef.description : '' };
+      });
+      socket.emit('npcDialog', { npcName: npc.name, message: npc.dialog, questId: null, action: 'none', isShop: true, shopItems: shopData, silverBalance: p.silver });
+      return;
+    }
     // Artesão crafting
     if (npc.isCrafter) {
       socket.emit('npcDialog', {
@@ -2278,6 +2702,21 @@ io.on('connection', (socket) => {
     sendFullState(p);
   });
 
+  socket.on('buyItem', ({ itemId }) => {
+    const p = players[socket.id];
+    if (!p) return;
+    const itemDef = ITEMS[itemId];
+    if (!itemDef || !itemDef.price) return socket.emit('chat', { sender: 'Sistema', message: 'Item inválido.', color: '#f44' });
+    if (p.silver < itemDef.price) return socket.emit('chat', { sender: 'Sistema', message: `Prata insuficiente! Necessário: ${itemDef.price}`, color: '#f44' });
+    p.silver -= itemDef.price;
+    addItemToInventory(p.charId, itemId, 1);
+    db.prepare('UPDATE characters SET silver = ? WHERE id = ?').run(p.silver, p.charId);
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
+    sendFullState(p);
+    socket.emit('chat', { sender: 'Sistema', message: `Comprou: ${itemDef.name} por ${itemDef.price} pratas!`, color: '#0f0' });
+  });
+
   socket.on('craft', ({ recipeId }) => {
     const p = players[socket.id];
     if (!p) return;
@@ -2308,8 +2747,8 @@ io.on('connection', (socket) => {
     }
     // Add result
     addItemToInventory(p.charId, recipe.resultId, recipe.resultQty);
-    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
-    socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
     sendFullState(p);
     socket.emit('chat', { sender: 'Sistema', message: `ðŸ› ï¸ Criou: ${recipe.name}!`, color: '#0f0' });
   });
@@ -2329,8 +2768,8 @@ io.on('connection', (socket) => {
     } else {
       db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(invRow.id);
     }
-    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
-    socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
     sendFullState(p);
     socket.emit('chat', { sender: 'Sistema', message: `Usou: ${item.name}`, color: '#0f0' });
   });
@@ -2348,8 +2787,8 @@ io.on('connection', (socket) => {
     addItemToInventory(p.charId, gi.itemId, gi.quantity);
     groundItems.splice(idx, 1);
     socket.emit('chat', { sender: 'Sistema', message: `Pegou: ${gi.name}${gi.quantity > 1 ? ' x' + gi.quantity : ''}`, color: '#0ff' });
-    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
-    socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
     sendFullState(p);
   });
 
@@ -2380,10 +2819,30 @@ io.on('connection', (socket) => {
     // Spawn on ground near player
     spawnGroundItem(invRow.item_id, dropQty, p.x + (Math.random() - 0.5) * 0.8, p.y + (Math.random() - 0.5) * 0.8, p.quadrant);
     saveCharacter(p);
-    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ?').all(p.charId);
-    socket.emit('inventoryUpdate', inv.map(i => ({ ...i, ...ITEMS[i.item_id] })));
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
     sendFullState(p);
     socket.emit('chat', { sender: 'Sistema', message: `Largou: ${item.name}${dropQty > 1 ? ' x' + dropQty : ''}`, color: '#f88' });
+  });
+
+  // Swap / move inventory slots
+  socket.on('swapInvSlot', ({ id1, id2, targetSlotIndex }) => {
+    const p = players[socket.id];
+    if (!p) return;
+    const row1 = db.prepare('SELECT * FROM inventory WHERE id = ? AND character_id = ?').get(id1, p.charId);
+    if (!row1) return;
+    if (id2) {
+      // Swap slot_order between two filled slots (each takes the other's exact slot position)
+      const row2 = db.prepare('SELECT * FROM inventory WHERE id = ? AND character_id = ?').get(id2, p.charId);
+      if (!row2) return;
+      db.prepare('UPDATE inventory SET slot_order = ? WHERE id = ?').run(row2.slot_order, id1);
+      db.prepare('UPDATE inventory SET slot_order = ? WHERE id = ?').run(row1.slot_order, id2);
+    } else {
+      // Move to any empty slot — just set the exact target slot index directly
+      db.prepare('UPDATE inventory SET slot_order = ? WHERE id = ?').run(targetSlotIndex, id1);
+    }
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
   });
 
   socket.on('chat', ({ message }) => {
@@ -2438,6 +2897,16 @@ io.on('connection', (socket) => {
   });
 });
 
+function getNextSlotOrder(charId) {
+  const used = new Set(
+    db.prepare('SELECT slot_order FROM inventory WHERE character_id = ?').all(charId).map(r => r.slot_order)
+  );
+  for (let i = 0; i < 30; i++) {
+    if (!used.has(i)) return i;
+  }
+  return used.size; // inventário cheio, fallback
+}
+
 function addItemToInventory(charId, itemId, qty) {
   const item = ITEMS[itemId];
   // Itens não-empilháveis: weapon, armor, helmet, chest, legs, boots, ring, shield
@@ -2445,7 +2914,8 @@ function addItemToInventory(charId, itemId, qty) {
   if (item && noStack.includes(item.type)) {
     // Cada item não-empilhável fica em slot separado
     for (let i = 0; i < qty; i++) {
-      db.prepare('INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, 1)').run(charId, itemId);
+      const so = getNextSlotOrder(charId);
+      db.prepare('INSERT INTO inventory (character_id, item_id, quantity, slot_order) VALUES (?, ?, 1, ?)').run(charId, itemId, so);
     }
   } else if (item && item.stackMax) {
     // Itens com stack máximo (ex: couro_cru max 10)
@@ -2464,7 +2934,8 @@ function addItemToInventory(charId, itemId, qty) {
     // Criar novos slots para o restante
     while (remaining > 0) {
       const stackQty = Math.min(item.stackMax, remaining);
-      db.prepare('INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, ?)').run(charId, itemId, stackQty);
+      const so = getNextSlotOrder(charId);
+      db.prepare('INSERT INTO inventory (character_id, item_id, quantity, slot_order) VALUES (?, ?, ?, ?)').run(charId, itemId, stackQty, so);
       remaining -= stackQty;
     }
   } else {
@@ -2472,7 +2943,8 @@ function addItemToInventory(charId, itemId, qty) {
     if (existing) {
       db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE id = ?').run(qty, existing.id);
     } else {
-      db.prepare('INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, ?)').run(charId, itemId, qty);
+      const so = getNextSlotOrder(charId);
+      db.prepare('INSERT INTO inventory (character_id, item_id, quantity, slot_order) VALUES (?, ?, ?, ?)').run(charId, itemId, qty, so);
     }
   }
 }
@@ -2532,11 +3004,19 @@ setInterval(() => {
   // Enemy AI
   for (const enemy of enemies) {
     if (enemy.dead) {
-      if (now - enemy.deathTime > 30000) {
+      const respawnDelay = enemy.type === 'bossskeleton' ? 10 * 60 * 1000 : 30000;
+      if (now - enemy.deathTime > respawnDelay) {
         enemy.dead = false;
         enemy.hp = enemy.maxHp;
         enemy.x = enemy.spawnX;
         enemy.y = enemy.spawnY;
+        if (enemy.type === 'bossskeleton') {
+          enemy.bossState = 'idle';
+          enemy.animState = 'boss1';
+          enemy.a1SpawnedCount = 0; enemy.a2CastCount = 0;
+          enemy.lootReady = false; enemy.lootCollectorId = null;
+          enemy.idleFlipTimer = 0;
+        }
       }
       continue;
     }
@@ -2552,6 +3032,10 @@ setInterval(() => {
     enemy.moving = false;
 
     if (enemy.type === 'skeleton') {
+      // Reset animState de ataque após 350ms
+      if (enemy.animState === 'batendo' && now - (enemy.attackAnimTimer || 0) > 350) {
+        enemy.animState = 'idle';
+      }
       if (nearest && nearDist < 7) {
         // Chase
         if (nearDist > 1.2) {
@@ -2567,21 +3051,23 @@ setInterval(() => {
           const totalDef = nearest.defense + getPlayerDefenseBonus(nearest);
           const dmg = Math.max(0, enemy.damage - totalDef);
           if (dmg > 0) {
+            enemy.animState = 'batendo';
+            enemy.attackAnimTimer = now;
             nearest.hp -= dmg;
             nearest.lastCombatTime = now;
             nearest.socket.emit('damageTaken', { from: enemy.id, damage: dmg, hp: nearest.hp });
             if (nearest.hp <= 0) {
               // Player death
               nearest.hp = nearest.max_hp;
-              nearest.x = 40; nearest.y = 30;
+              nearest.x = 50; nearest.y = 47;
               nearest.silver = Math.floor(nearest.silver * 0.9);
               nearest.lastCombatTime = 0;
               nearest.targetId = null;
-              // Respawn in F5 (Cidade) if in another quadrant
-              if (nearest.quadrant !== 'F5') {
-                nearest.quadrant = 'F5';
-                nearest.socket.emit('mapData', buildMapData('F5'));
-                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'F5'));
+              // Respawn em E5 (Cidade de Spawn) tile 50x47
+              if (nearest.quadrant !== 'E5') {
+                nearest.quadrant = 'E5';
+                nearest.socket.emit('mapData', buildMapData('E5'));
+                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'E5'));
               }
               nearest.socket.emit('death', { silver: nearest.silver });
               sendFullState(nearest);
@@ -2621,14 +3107,15 @@ setInterval(() => {
             nearest.socket.emit('damageTaken', { from: enemy.id, damage: dmg, hp: nearest.hp });
             if (nearest.hp <= 0) {
               nearest.hp = nearest.max_hp;
-              nearest.x = 40; nearest.y = 30;
+              nearest.x = 50; nearest.y = 47;
               nearest.silver = Math.floor(nearest.silver * 0.9);
               nearest.lastCombatTime = 0;
               nearest.targetId = null;
-              if (nearest.quadrant !== 'F5') {
-                nearest.quadrant = 'F5';
-                nearest.socket.emit('mapData', buildMapData('F5'));
-                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'F5'));
+              // Respawn em E5 (Cidade de Spawn) tile 50x47
+              if (nearest.quadrant !== 'E5') {
+                nearest.quadrant = 'E5';
+                nearest.socket.emit('mapData', buildMapData('E5'));
+                nearest.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'E5'));
               }
               nearest.socket.emit('death', { silver: nearest.silver });
               sendFullState(nearest);
@@ -2700,6 +3187,159 @@ setInterval(() => {
           enemy.animState = 'idle';
         }
       }
+    } else if (enemy.type === 'bossskeleton') {
+      // ====== BOSS SKELETON AI ======
+
+      // Idle animation: toggle boss1/boss2 every 1s when not in an attack
+      if (enemy.bossState === 'idle' || enemy.bossState === 'aggroed') {
+        if (now - enemy.idleFlipTimer >= 1000) {
+          enemy.idleFlipTimer = now;
+          if (enemy.animState !== 'boss1' && enemy.animState !== 'boss2') enemy.animState = 'boss1';
+          else enemy.animState = enemy.animState === 'boss1' ? 'boss2' : 'boss1';
+        }
+      }
+
+      if (enemy.bossState === 'idle') {
+        // Detect player within 10 tiles of spawn
+        if (nearest) {
+          const dSpawn = Math.sqrt((nearest.x - enemy.spawnX)**2 + (nearest.y - enemy.spawnY)**2);
+          if (dSpawn <= 10) {
+            enemy.bossState = 'aggroed';
+            enemy.nextAttackTime = now + 2000;
+          }
+        }
+        // Regen while idle
+        if (enemy.hp < enemy.maxHp && now - enemy.regenTimer > 1000) {
+          enemy.regenTimer = now;
+          enemy.hp = Math.min(enemy.maxHp, enemy.hp + 5);
+        }
+
+      } else if (enemy.bossState === 'aggroed') {
+        const dSpawn = nearest ? Math.sqrt((nearest.x - enemy.spawnX)**2 + (nearest.y - enemy.spawnY)**2) : 999;
+        if (!nearest || dSpawn > 13) {
+          // Player left – start regen and go idle
+          enemy.bossState = 'idle';
+          enemy.animState = 'boss1';
+        } else if (now >= enemy.nextAttackTime) {
+          // Pick random attack
+          if (Math.random() < 0.5) {
+            enemy.bossState = 'attack1';
+            enemy.animState = 'boss3';
+            enemy.a1SpawnedCount = 0;
+            enemy.a1NextSpawnTime = now + 800;
+            enemy.a1Boss4Until = 0;
+          } else {
+            enemy.bossState = 'attack2';
+            enemy.animState = 'boss5';
+            enemy.a2CastCount = 0;
+            enemy.a2NextCastTime = now + 800;
+            enemy.a2Boss6Until = 0;
+          }
+        }
+
+      } else if (enemy.bossState === 'attack1') {
+        const dSpawn = nearest ? Math.sqrt((nearest.x - enemy.spawnX)**2 + (nearest.y - enemy.spawnY)**2) : 999;
+        if (!nearest || dSpawn > 13) {
+          enemy.bossState = 'idle'; enemy.a1SpawnedCount = 0; enemy.animState = 'boss1';
+        } else {
+          // Boss4 flash after each spawn
+          if (now < enemy.a1Boss4Until) enemy.animState = 'boss4';
+          else if (enemy.animState === 'boss4') enemy.animState = 'boss3';
+
+          if (enemy.a1SpawnedCount < 6 && now >= enemy.a1NextSpawnTime) {
+            // Spawn skeleton within 5 tiles of boss
+            let sx = enemy.x, sy = enemy.y;
+            for (let att = 0; att < 30; att++) {
+              const angle = Math.random() * Math.PI * 2;
+              const r = 1 + Math.random() * 4;
+              sx = enemy.x + Math.cos(angle) * r;
+              sy = enemy.y + Math.sin(angle) * r;
+              if (!isBlocked(sx, sy, 'C5')) break;
+            }
+            enemies.push({
+              id: `boss_minion_${Date.now()}_${enemy.a1SpawnedCount}`, type: 'skeleton', quadrant: 'C5',
+              x: sx, y: sy, spawnX: sx, spawnY: sy,
+              hp: 15, maxHp: 15, damage: 5, dead: false, deathTime: 0,
+              direction: 'right', lastAttack: 0, lastWander: 0, moving: false
+            });
+            enemy.a1SpawnedCount++;
+            enemy.a1Boss4Until = now + 500;
+            enemy.a1NextSpawnTime = now + 1000;
+          }
+          if (enemy.a1SpawnedCount >= 6 && now >= enemy.a1NextSpawnTime) {
+            enemy.bossState = 'aggroed';
+            enemy.nextAttackTime = now + 10000;
+            enemy.animState = 'boss1';
+            enemy.idleFlipTimer = now;
+          }
+        }
+
+      } else if (enemy.bossState === 'attack2') {
+        const dSpawn = nearest ? Math.sqrt((nearest.x - enemy.spawnX)**2 + (nearest.y - enemy.spawnY)**2) : 999;
+        if (!nearest || dSpawn > 13) {
+          enemy.bossState = 'idle'; enemy.a2CastCount = 0; enemy.animState = 'boss1';
+          bossSpells.length = 0;
+        } else {
+          // Boss6 flash after each cast
+          if (now < enemy.a2Boss6Until) enemy.animState = 'boss6';
+          else if (enemy.animState === 'boss6') enemy.animState = 'boss5';
+
+          // Process spell transitions and damage
+          for (let si = bossSpells.length - 1; si >= 0; si--) {
+            const spell = bossSpells[si];
+            if (spell.phase === 'warning' && now >= spell.activateTime) {
+              spell.phase = 'active';
+              // Damage players standing on the spell
+              for (const p of Object.values(players)) {
+                if (p.quadrant !== 'C5') continue;
+                const d = Math.sqrt((p.x - spell.x)**2 + (p.y - spell.y)**2);
+                if (d < 1.2) {
+                  p.hp -= 10;
+                  p.lastCombatTime = now;
+                  p.socket.emit('damageTaken', { from: 'boss_c5', damage: 10, hp: p.hp });
+                  if (p.hp <= 0) {
+                    p.hp = p.max_hp; p.x = 50; p.y = 47;
+                    p.silver = Math.floor(p.silver * 0.9);
+                    p.lastCombatTime = 0;
+                    // Respawn em E5 (Cidade de Spawn) tile 50x47
+                    if (p.quadrant !== 'E5') {
+                      p.quadrant = 'E5';
+                      p.socket.emit('mapData', buildMapData('E5'));
+                      p.socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === 'E5'));
+                    }
+                    p.socket.emit('death', { silver: p.silver });
+                    sendFullState(p);
+                    io.emit('chat', { sender: 'Sistema', message: `${p.username} foi derrotado pelo Boss Esqueleto!`, color: '#f44' });
+                  }
+                }
+              }
+            }
+            if (now >= spell.expireTime) bossSpells.splice(si, 1);
+          }
+
+          // Cast spell under nearest player
+          if (enemy.a2CastCount < 4 && now >= enemy.a2NextCastTime) {
+            bossSpells.push({
+              id: ++bossSpellIdCounter,
+              x: nearest.x, y: nearest.y,
+              phase: 'warning',
+              activateTime: now + 1000,
+              expireTime:   now + 3000
+            });
+            enemy.a2CastCount++;
+            enemy.a2Boss6Until = now + 1000;
+            enemy.a2NextCastTime = now + 5000; // 1s warn + 2s active + 2s gap
+          }
+
+          // Combo done after 4 casts and last gap elapsed
+          if (enemy.a2CastCount >= 4 && now >= enemy.a2NextCastTime) {
+            enemy.bossState = 'aggroed';
+            enemy.nextAttackTime = now + 10000;
+            enemy.animState = 'boss1';
+            enemy.idleFlipTimer = now;
+          }
+        }
+      }
     }
   }
 
@@ -2731,7 +3371,9 @@ setInterval(() => {
           equipped_helmet: op.equipped_helmet || '',
           equipped_legs: op.equipped_legs || '',
           equipped_boots: op.equipped_boots || '',
-          isAdmin: op.isAdmin
+          isAdmin: op.isAdmin,
+          char_name: op.char_name || '', hairstyle: op.hairstyle || 'nenhum',
+          hair_color: op.hair_color || 'castanho'
         };
         // Incluir balão de fala se ainda estiver ativo (5 segundos)
         if (op.chatBubble && (Date.now() - op.chatBubble.time < 5000)) {
@@ -2741,13 +3383,23 @@ setInterval(() => {
       }
     }
     const nearbyEnemies = enemies.filter(e => {
-      if (e.dead || e.quadrant !== p.quadrant) return false;
+      if (e.quadrant !== p.quadrant) return false;
+      if (e.dead && !(e.type === 'bossskeleton' && e.lootReady)) return false;
       return Math.sqrt((e.x - p.x)**2 + (e.y - p.y)**2) < 20;
-    }).map(e => ({
-      id: e.id, type: e.type, x: e.x, y: e.y,
-      hp: e.hp, maxHp: e.maxHp, direction: e.direction, moving: e.moving || false,
-      animState: e.animState || 'idle'
-    }));
+    }).map(e => {
+      const base = {
+        id: e.id, type: e.type, x: e.x, y: e.y,
+        hp: e.hp, maxHp: e.maxHp, direction: e.direction, moving: e.moving || false,
+        animState: e.animState || 'idle'
+      };
+      if (e.type === 'bossskeleton') {
+        base.dead = e.dead || false;
+        base.lootReady = e.lootReady || false;
+        base.lootCollectorId = e.lootCollectorId || null;
+        base.lootCollectStart = e.lootCollectStart || 0;
+      }
+      return base;
+    });
 
     // Ground items nearby (same quadrant)
     const nearbyGround = groundItems.filter(gi => {
@@ -2785,7 +3437,8 @@ setInterval(() => {
       }
     }
 
-    p.socket.volatile.emit('gameState', { players: nearbyPlayers, enemies: nearbyEnemies, groundItems: nearbyGround, npcQuestStatus });
+    const nearbyBossSpells = p.quadrant === 'C5' ? bossSpells.map(s => ({ id: s.id, x: s.x, y: s.y, phase: s.phase })) : [];
+    p.socket.volatile.emit('gameState', { players: nearbyPlayers, enemies: nearbyEnemies, groundItems: nearbyGround, npcQuestStatus, bossSpells: nearbyBossSpells });
   }
 
   // Cleanup ground items older than 5 minutes
@@ -2811,6 +3464,33 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('[ERRO] Promise rejeitada:', reason);
 });
+
+// Dar todos os novos itens do Boss Esqueleto para Sheldon testar
+(function giveNewBossItems() {
+  const acc = db.prepare("SELECT id FROM accounts WHERE username = 'Sheldon'").get();
+  if (!acc) return;
+  const char = db.prepare('SELECT id FROM characters WHERE account_id = ?').get(acc.id);
+  if (!char) return;
+  const newBossItems = [
+    'peitoral_ossos', 'ombreiras_boss_esqueleto', 'peitoral_boss_esqueleto',
+    'peitoral_boss_esqueleto_capa', 'capacete_ossos', 'elmo_ossos', 'elmo_caveira',
+    'lanca_ossos', 'adagas_ossos', 'espada_ossos', 'calca_boss_esqueleto'
+  ];
+  for (const itemId of newBossItems) {
+    const already = db.prepare('SELECT id FROM inventory WHERE character_id = ? AND item_id = ?').get(char.id, itemId);
+    if (!already) {
+      addItemToInventory(char.id, itemId, 1);
+      console.log(`[Init] ${itemId} adicionado ao inventário de Sheldon`);
+    }
+  }
+  // Garante elmo_caveira mesmo que tenha falhado antes
+  const hasCaveira = db.prepare("SELECT id FROM inventory WHERE character_id = ? AND item_id = 'elmo_caveira'").get(char.id);
+  if (!hasCaveira) {
+    addItemToInventory(char.id, 'elmo_caveira', 1);
+    console.log('[Init] elmo_caveira adicionado ao inventário de Sheldon');
+  }
+  console.log('[Init] Novos itens do Boss Esqueleto verificados para Sheldon');
+})();
 
 const PORT = 3240;
 server.listen(PORT, () => {

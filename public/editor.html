@@ -373,8 +373,10 @@ body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; di
     <label>Mapa:</label>
     <select id="quadSelect" onchange="loadQuadrant(this.value)">
       <option value="E5">E5 - Vila de Testes</option>
-      <option value="E4">E4 - Planície</option>
+      <option value="E4">E4 - Planície Verde</option>
       <option value="F5">F5 - Cidade</option>
+      <option value="D5">D5 - Planície do Norte</option>
+      <option value="C5">C5 - Planície do Horizonte</option>
       <option value="IGREJA">IGREJA - Interior da Igreja</option>
     </select>
   </div>
@@ -398,7 +400,7 @@ const T = {
   GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41,
   ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45,
   TREE_BETULA:46, TREE_CARVALHO_SMALL:47, TREE_MAGICA:48, TREE_MANGUE:49, TREE_PINHEIRO:50, TREE_PINOS:51,
-  WATER_RIVER:52
+  WATER_RIVER:52, DEAD_GRASS:53, DEAD_DIRT:54
 };
 
 // Color map for rendering tiles on the editor
@@ -456,6 +458,8 @@ const TILE_COLORS = {
   [T.TREE_MANGUE]: '#2a6a20',
   [T.TREE_PINHEIRO]: '#0e4a20',
   [T.TREE_PINOS]: '#1a5a1a',
+  [T.DEAD_GRASS]: '#6b5a2a',
+  [T.DEAD_DIRT]: '#3a2e18',
 };
 
 // Tile icons/symbols for the editor
@@ -476,7 +480,8 @@ const TILE_ICONS = {
   [T.DEAD_TREE]: '🌵', [T.BONE]: '🦴', [T.CHURCH_WALL]: '🏛️',
   [T.ROOF_RED]: '🔴', [T.ROOF_BLUE]: '🔵', [T.ROOF_YELLOW]: '🟡', [T.BENCH]: '🪑',
   [T.TREE_BETULA]: '�', [T.TREE_CARVALHO_SMALL]: '🌱', [T.TREE_MAGICA]: '✨',
-  [T.TREE_MANGUE]: '🌴', [T.TREE_PINHEIRO]: '🌲', [T.TREE_PINOS]: '🎄'
+  [T.TREE_MANGUE]: '🌴', [T.TREE_PINHEIRO]: '🌲', [T.TREE_PINOS]: '🎄',
+  [T.DEAD_GRASS]: '🍂', [T.DEAD_DIRT]: '⬛'
 };
 
 const TILE_NAMES = {};

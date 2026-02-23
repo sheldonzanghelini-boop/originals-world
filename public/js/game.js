@@ -61,7 +61,7 @@ const T = { GRASS:0, DIRT:1, STONE_PATH:2, STONE_WALL:3, WATER:4, TREE_CARVALHO:
   GRAVESTONE:36, DEAD_TREE:37, BONE:38, MUD:39, HAY:40, CHURCH_WALL:41,
   ROOF_RED:42, ROOF_BLUE:43, ROOF_YELLOW:44, BENCH:45,
   TREE_BETULA:46, TREE_CARVALHO_SMALL:47, TREE_MAGICA:48, TREE_MANGUE:49, TREE_PINHEIRO:50, TREE_PINOS:51,
-  WATER_RIVER:52 };
+  WATER_RIVER:52, DEAD_GRASS:53, DEAD_DIRT:54 };
 const BLOCKED = new Set([T.STONE_WALL, T.WATER, T.WATER_RIVER, T.TREE_CARVALHO, T.WOOD_WALL, T.BUSH, T.ROCK, T.ANVIL, T.FURNACE,
   T.BOOKSHELF, T.WELL, T.FENCE, T.BARREL, T.CRATE, T.BED, T.TORCH_WALL, T.GRAVESTONE, T.DEAD_TREE, T.HAY, T.CHURCH_WALL,
   T.TREE_BETULA, T.TREE_CARVALHO_SMALL, T.TREE_MAGICA, T.TREE_MANGUE, T.TREE_PINHEIRO, T.TREE_PINOS]);
@@ -73,6 +73,9 @@ let myChar = null;
 let otherPlayers = {};
 let otherPlayersCache = {}; // interpolation: { id: { x, y, targetX, targetY, animFrame, animTimer } }
 let nearbyEnemies = [];
+let bossSpells = [];
+let bossLootActive = false;
+let bossLootStartTime = 0;
 let npcs = [];
 let myInventory = [];
 let myQuests = [];
@@ -205,10 +208,44 @@ const ITEMS_CLIENT = {
   pocao_cura: { name: 'Poção de Cura', icon: null },
   couro_cru: { name: 'Couro Cru', icon: '/assets/sprites/cow/courocru.png' },
   couro_trabalhado: { name: 'Couro Trabalhado', icon: '/assets/sprites/cow/courotrabalhado.png' },
-  tunica_couro_simples: { name: 'Túnica de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/tunicacourosimples.png' },
-  chapeu_couro_simples: { name: 'Chapéu de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/chapeucourosimples.png' },
-  bota_couro_simples: { name: 'Bota de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/botacourosimples.png' },
-  calca_couro_simples: { name: 'Calça de Couro Simples', icon: '/assets/icons/Armadura de Couro Simples/calcacourosimples.png' }
+  tunica_couro_simples: { name: 'Túnica de Couro Simples', icon: '/assets/icons/armaduras/tunicacourosimples.png' },
+  chapeu_couro_simples: { name: 'Chapéu de Couro Simples', icon: '/assets/icons/armaduras/chapeucourosimples.png' },
+  bota_couro_simples: { name: 'Bota de Couro Simples', icon: '/assets/icons/armaduras/botacourosimples.png' },
+  calca_couro_simples: { name: 'Calça de Couro Simples', icon: '/assets/icons/armaduras/calcacourosimples.png' },
+  peitoral_ferro_simples: { name: 'Peitoral de Ferro Simples', icon: '/assets/icons/armaduras/peitoralsimplesicone.png' },
+  bota_ferro_simples: { name: 'Bota de Ferro Simples', icon: '/assets/icons/armaduras/iconebotaferrosimples.png' },
+  peitoral_ferro: { name: 'Peitoral de Ferro', icon: '/assets/icons/armaduras/iconepeitoralferro.png' },
+  elmo_ferro_simples: { name: 'Elmo de Ferro Simples', icon: '/assets/icons/armaduras/iconeelmoferrosimples.png' },
+  elmo_ferro: { name: 'Elmo de Ferro', icon: '/assets/icons/armaduras/iconeelmoferro.png' },
+  // Itens do Boss Esqueleto
+  peitoral_ossos: { name: 'Peitoral de Ossos', icon: '/assets/icons/bossesqueleto/iconepeitoralossos.png', rarity: 'uncommon' },
+  ombreiras_boss_esqueleto: { name: 'Ombreira Boss Esqueleto', icon: '/assets/icons/bossesqueleto/iconeombreirasbossesqueleto.png', rarity: 'common' },
+  peitoral_boss_esqueleto: { name: 'Peitoral Boss Esqueleto', icon: '/assets/icons/bossesqueleto/iconepeitoralbossesqueleto.png', rarity: 'uncommon' },
+  peitoral_boss_esqueleto_capa: { name: 'Peitoral Boss Esqueleto com Capa', icon: '/assets/icons/bossesqueleto/iconepeitoralbossesqueleto.png', rarity: 'rare' },
+  capacete_ossos: { name: 'Capacete de Ossos', icon: '/assets/icons/bossesqueleto/iconeelmoossos1.png', rarity: 'common' },
+  elmo_ossos: { name: 'Elmo de Ossos', icon: '/assets/icons/bossesqueleto/iconeelmoossos2.png', rarity: 'uncommon' },
+  elmo_caveira: { name: 'Elmo Caveira', icon: '/assets/icons/bossesqueleto/iconeelmoossos3.png', rarity: 'rare' },
+  lanca_ossos: { name: 'Lança de Ossos', icon: '/assets/icons/bossesqueleto/iconelancaossos.png', rarity: 'uncommon' },
+  adagas_ossos: { name: 'Adagas de Ossos', icon: '/assets/icons/bossesqueleto/iconeadagaossos.png', rarity: 'uncommon' },
+  espada_ossos: { name: 'Espada de Ossos', icon: '/assets/icons/bossesqueleto/iconeespadaossos.png', rarity: 'uncommon' },
+  calca_boss_esqueleto: { name: 'Calça do Boss Esqueleto', icon: '/assets/icons/bossesqueleto/iconecalcabossesqueleto.png', rarity: 'uncommon' },
+};
+
+// Cores por grau de raridade
+const RARITY_COLORS = {
+  common: '#aaaaaa',
+  uncommon: '#55cc55',
+  rare: '#4a90d9',
+  epic: '#a54fcf',
+  legendary: '#ff8c00'
+};
+
+const RARITY_LABELS = {
+  common: 'Comum',
+  uncommon: 'Incomum',
+  rare: 'Raro',
+  epic: 'Épico',
+  legendary: 'Lendário'
 };
 
 // Input
@@ -239,6 +276,7 @@ const spriteNames = [
   ['andando', '/assets/sprites/player/andando.png'],
   ['esqueletoparado', '/assets/sprites/skeleton/esqueletoparado.png'],
   ['esqueletoandando', '/assets/sprites/skeleton/esqueletoandando.png'],
+  ['esqueletobatendo', '/assets/sprites/skeleton/esqueletobatendo.png'],
   ['slime', '/assets/sprites/slime/slime.png'],
   ['padre', '/assets/sprites/npcs/padre.png'],
   ['paladino', '/assets/sprites/npcs/paladino.png'],
@@ -258,39 +296,116 @@ const spriteNames = [
   ['botaandando', '/assets/sprites/player/itens/Couro simples/botaandando.png'],
   ['calcaparado', '/assets/sprites/player/itens/Couro simples/calcaparado.png'],
   ['calcaandando', '/assets/sprites/player/itens/Couro simples/calcaandando.png'],
+  ['peitoralferrosimplesparado', '/assets/sprites/player/itens/Metal/peitoralferrosimplesparado.png'],
+  ['peitoralferrosimplesandando', '/assets/sprites/player/itens/Metal/peitoralferrosimplesandando.png'],
+  ['botaferrosimplesparado', '/assets/sprites/player/itens/Metal/botaferrosimplesparado.png'],
+  ['botaferrosimplesandando', '/assets/sprites/player/itens/Metal/botaferrosimplesandando.png'],
+  ['peitoraldeferroparado', '/assets/sprites/player/itens/Metal/peitoraldeferroparado.png'],
+  ['peitoraldeferroandando', '/assets/sprites/player/itens/Metal/peitoraldeferroandando.png'],
+  ['elmoferrosimplesparado', '/assets/sprites/player/itens/Metal/elmoferrosimplesparado.png'],
+  ['elmoferrosimplesandando', '/assets/sprites/player/itens/Metal/elmoferrosimplesandando.png'],
+  ['elmoferroparado', '/assets/sprites/player/itens/Metal/elmoferroparado.png'],
+  ['elmoferroandando', '/assets/sprites/player/itens/Metal/elmoferroandando.png'],
   ['zumbiparado', '/assets/sprites/zumbi/zumbiparado.png'],
   ['zumbiandando', '/assets/sprites/zumbi/zumbiandando.png'],
+  ['cabelosocial', '/assets/sprites/player/cabelo/cabelosocial.png'],
+  ['cabelobagunçado', '/assets/sprites/player/cabelo/cabelobagunçado.png'],
+  ['cabelobuzzcut', '/assets/sprites/player/cabelo/cabelobuzzcut.png'],
+  ['cabelotopete', '/assets/sprites/player/cabelo/cabelotopete.png'],
+  ['cabelonormal', '/assets/sprites/player/cabelo/cabelonormal.png'],
+  ['cabelodelado', '/assets/sprites/player/cabelo/cabelodelado.png'],
+  ['cabelosamurai', '/assets/sprites/player/cabelo/cabelosamurai.png'],
+  // Boss Skeleton
+  ['boss1', '/assets/sprites/bossskeleton/boss1.png'],
+  ['boss2', '/assets/sprites/bossskeleton/boss2.png'],
+  ['boss3', '/assets/sprites/bossskeleton/boss3.png'],
+  ['boss4', '/assets/sprites/bossskeleton/boss4.png'],
+  ['boss5', '/assets/sprites/bossskeleton/boss5.png'],
+  ['boss6', '/assets/sprites/bossskeleton/boss6.png'],
+  ['boss7', '/assets/sprites/bossskeleton/boss7.png'],
+  ['bossataque1', '/assets/sprites/bossskeleton/ataque1.png'],
+  ['bossataque2', '/assets/sprites/bossskeleton/ataque2.png'],
+  // Itens do Boss Esqueleto
+  ['peitoralossosandando', '/assets/sprites/player/itens/Boss esqueleto/peitoralossosandando.png'],
+  ['peitoralossosparado', '/assets/sprites/player/itens/Boss esqueleto/peitoralossosparado.png'],
+  ['ombreirasbossesqueletoandando', '/assets/sprites/player/itens/Boss esqueleto/ombreirasbossesqueletoandando.png'],
+  ['ombreirasbossesqueletoparado', '/assets/sprites/player/itens/Boss esqueleto/ombreirasbossesqueletoparado.png'],
+  ['peitoralbossesqueletoandando', '/assets/sprites/player/itens/Boss esqueleto/peitoralbossesqueletoandando.png'],
+  ['peitoralbossesqueletoparado', '/assets/sprites/player/itens/Boss esqueleto/peitoralbossesqueletoparado.png'],
+  ['capabossesqueletoandando', '/assets/sprites/player/itens/Boss esqueleto/capabossesqueletoandando.png'],
+  ['capabossesqueletoparado', '/assets/sprites/player/itens/Boss esqueleto/capabossesqueletoparado.png'],
+  ['elmoossos1andando', '/assets/sprites/player/itens/Boss esqueleto/elmoossos1andando.png'],
+  ['elmoossos1parado', '/assets/sprites/player/itens/Boss esqueleto/elmoossos1parado.png'],
+  ['elmoossos2andando', '/assets/sprites/player/itens/Boss esqueleto/elmoossos2andando.png'],
+  ['elmoossos2parado', '/assets/sprites/player/itens/Boss esqueleto/elmoossos2parado.png'],
+  ['elmoossos3andando', '/assets/sprites/player/itens/Boss esqueleto/elmoossos3andando.png'],
+  ['elmoossos3parado', '/assets/sprites/player/itens/Boss esqueleto/elmoossos3parado.png'],
+  ['lancaossosandando', '/assets/sprites/player/itens/Boss esqueleto/lancaossosandando.png'],
+  ['lancaossosparado', '/assets/sprites/player/itens/Boss esqueleto/lancaossosparado.png'],
+  ['adagaossosandando', '/assets/sprites/player/itens/Boss esqueleto/adagaossosandando.png'],
+  ['adagaossosparado', '/assets/sprites/player/itens/Boss esqueleto/adagaossosparado.png'],
+  ['calcabossesqueletoandando', '/assets/sprites/player/itens/Boss esqueleto/calcabossesqueletoandando.png'],
+  ['calcabossesqueletoparado', '/assets/sprites/player/itens/Boss esqueleto/calcabossesqueletoparado.png'],
+  ['espadaossosandando', '/assets/sprites/player/itens/Boss esqueleto/espadaossosandando.png'],
+  ['espadaossosparado', '/assets/sprites/player/itens/Boss esqueleto/espadaossosparado.png'],
 ];
-
 // Mapa de item_id -> sprite names [parado, andando]
 const WEAPON_SPRITES = {
   espada_enferrujada: ['enferrujadaparado', 'esferrujadaandando'],
+  lanca_ossos: ['lancaossosparado', 'lancaossosandando'],
+  adagas_ossos: ['adagaossosparado', 'adagaossosandando'],
+  espada_ossos: ['espadaossosparado', 'espadaossosandando'],
 };
 
 // Mapa de item_id -> sprite names [parado, andando] para armaduras de peitoral
 const CHEST_SPRITES = {
   tunica_couro_simples: ['tunicasimplesparado', 'tunicasimplesandando'],
+  peitoral_ferro_simples: ['peitoralferrosimplesparado', 'peitoralferrosimplesandando'],
+  peitoral_ferro: ['peitoraldeferroparado', 'peitoraldeferroandando'],
+  peitoral_ossos: ['peitoralossosparado', 'peitoralossosandando'],
+  ombreiras_boss_esqueleto: ['ombreirasbossesqueletoparado', 'ombreirasbossesqueletoandando'],
+  peitoral_boss_esqueleto: ['peitoralbossesqueletoparado', 'peitoralbossesqueletoandando'],
+  peitoral_boss_esqueleto_capa: ['peitoralbossesqueletoparado', 'peitoralbossesqueletoandando'],
 };
 
 // Mapa de item_id -> sprite names [parado, andando] para elmos
 const HELMET_SPRITES = {
   chapeu_couro_simples: ['chapeuparado', 'chapeuandando'],
+  elmo_ferro_simples: ['elmoferrosimplesparado', 'elmoferrosimplesandando'],
+  elmo_ferro: ['elmoferroparado', 'elmoferroandando'],
+  capacete_ossos: ['elmoossos1parado', 'elmoossos1andando'],
+  elmo_ossos: ['elmoossos2parado', 'elmoossos2andando'],
+  elmo_caveira: ['elmoossos3parado', 'elmoossos3andando'],
 };
+
+// Elmos feitos com PNG de 210px (mesmo esquema dos cabelos) - renderizados com altura 1.05x
+const TALL_HELMET_IDS = new Set(['capacete_ossos', 'elmo_ossos', 'elmo_caveira']);
 
 // Mapa de item_id -> sprite names [parado, andando] para botas
 const BOOTS_SPRITES = {
   bota_couro_simples: ['botaparado', 'botaandando'],
+  bota_ferro_simples: ['botaferrosimplesparado', 'botaferrosimplesandando'],
 };
 
 // Mapa de item_id -> sprite names [parado, andando] para calças
 const LEGS_SPRITES = {
   calca_couro_simples: ['calcaparado', 'calcaandando'],
+  calca_boss_esqueleto: ['calcabossesqueletoparado', 'calcabossesqueletoandando'],
+};
+
+// Mapa de item_id -> sprite names [parado, andando] para capas (renderizadas ATRÁS do boneco)
+const CAPE_SPRITES = {
+  peitoral_boss_esqueleto_capa: ['capabossesqueletoparado', 'capabossesqueletoandando'],
 };
 
 let spritesLoaded = 0;
 for (const [name, src] of spriteNames) {
   const img = new Image();
-  img.onload = () => { spritesLoaded++; };
+  img.onload = () => {
+    spritesLoaded++;
+    // Refresh character creation preview when hair sprites load
+    if (name.startsWith('cabelo')) renderCharCreationPreview();
+  };
   img.onerror = () => { console.warn('Sprite not found:', src); spritesLoaded++; };
   img.src = src;
   sprites[name] = img;
@@ -399,7 +514,7 @@ function initTileCache() {
   if (tileCacheBuilt) return;
   tileCacheBuilt = true;
   const s = TILE_BASE;
-  for (let tileType = 0; tileType <= 52; tileType++) {
+  for (let tileType = 0; tileType <= 54; tileType++) {
     // Skip tree sprite tiles and water tiles (animated separately)
     if (TREE_TILE_TYPES.has(tileType)) continue;
     if (tileType === T.WATER_RIVER) continue;
@@ -543,6 +658,64 @@ function renderDetailedTile(c, tileType, variant, s) {
       const gAccents = Math.max(1, Math.floor(s / 16));
       for (let i = 0; i < gAccents; i++) {
         c.fillRect(1 + Math.floor(rng() * (s - 3)), 1 + Math.floor(rng() * (s - 2)), 2, 1);
+      }
+      break;
+    }
+
+    // ===== DEAD GRASS =====
+    case T.DEAD_GRASS: {
+      c.fillStyle = '#6b5a2a';
+      c.fillRect(0, 0, s, s);
+      const dgdShades = ['#5e5020','#726030','#644e1a','#6a5828','#705e2e'];
+      const dgdPatches = Math.floor(s * s / 65);
+      for (let i = 0; i < dgdPatches; i++) {
+        c.fillStyle = dgdShades[Math.floor(rng() * dgdShades.length)];
+        c.fillRect(Math.floor(rng() * (s - 1)), Math.floor(rng() * (s - 1)),
+          rng() < 0.4 ? 2 : 1, rng() < 0.4 ? 2 : 1);
+      }
+      // Dead/dry grass blades (yellowish-grey)
+      const dgdTufts = Math.floor(s / 8) + (v % 3);
+      for (let i = 0; i < dgdTufts; i++) {
+        const tx = 3 + Math.floor(rng() * (s - 6));
+        const ty = 3 + Math.floor(rng() * (s - 8));
+        c.fillStyle = rng() < 0.5 ? '#8a7a40' : '#7a6a34';
+        c.fillRect(tx, ty, 1, 3);
+        if (rng() < 0.4) c.fillRect(tx + 1, ty + 2, 1, 1);
+      }
+      // Cracked soil patches
+      c.fillStyle = '#4a3c18';
+      const dgdSpecks = Math.max(2, Math.floor(s / 10));
+      for (let i = 0; i < dgdSpecks; i++) {
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), rng() < 0.3 ? 2 : 1, 1);
+      }
+      break;
+    }
+
+    // ===== DEAD DIRT =====
+    case T.DEAD_DIRT: {
+      c.fillStyle = '#3a2e18';
+      c.fillRect(0, 0, s, s);
+      const ddShades = ['#342a14','#40321c','#3e3020','#362c16','#3c2e1a'];
+      const ddPatches = Math.floor(s * s / 55);
+      for (let i = 0; i < ddPatches; i++) {
+        c.fillStyle = ddShades[Math.floor(rng() * ddShades.length)];
+        c.fillRect(Math.floor(rng() * (s - 2)), Math.floor(rng() * (s - 2)),
+          rng() < 0.35 ? 3 : rng() < 0.6 ? 2 : 1, rng() < 0.35 ? 3 : rng() < 0.6 ? 2 : 1);
+      }
+      // Crack lines
+      c.fillStyle = '#2a2010';
+      const ddCracks = Math.max(1, Math.floor(s / 14));
+      for (let i = 0; i < ddCracks; i++) {
+        const cx = Math.floor(rng() * (s - 6)) + 2;
+        const cy = Math.floor(rng() * (s - 4)) + 1;
+        const clen = 3 + Math.floor(rng() * 5);
+        for (let k = 0; k < clen; k++) c.fillRect(cx + k, cy + (k % 2), 1, 1);
+      }
+      // Light dust specks
+      c.fillStyle = '#504028';
+      const ddSpecks = Math.max(2, Math.floor(s / 12));
+      for (let i = 0; i < ddSpecks; i++) {
+        c.fillRect(Math.floor(rng() * s), Math.floor(rng() * s), 1, 1);
       }
       break;
     }
@@ -1826,7 +1999,15 @@ document.getElementById('btn-login').addEventListener('click', () => {
   loginError.textContent = 'Conectando...';
   socket.emit('login', { username, password }, (res) => {
     if (res.error) { loginError.textContent = res.error; }
-    else { lastLoginCredentials = { username, password }; startGame(); }
+    else {
+      lastLoginCredentials = { username, password };
+      if (res.needsHairstyle) {
+        // Mostrar seleção de cabelo antes de entrar no jogo (uso único)
+        showHairSelection(res.hairstyle, res.hair_color);
+      } else {
+        startGame();
+      }
+    }
   });
 });
 
@@ -1834,18 +2015,10 @@ document.getElementById('btn-register').addEventListener('click', () => {
   const username = usernameInput.value.trim();
   const password = passwordInput.value;
   if (!username || !password) { loginError.textContent = 'Preencha todos os campos.'; return; }
-  loginError.textContent = 'Criando conta...';
-  socket.emit('register', { username, password }, (res) => {
-    if (res.error) { loginError.textContent = res.error; }
-    else {
-      loginError.style.color = '#44cc44';
-      loginError.textContent = 'Conta criada! Entrando...';
-      socket.emit('login', { username, password }, (res2) => {
-        if (res2.error) { loginError.style.color = '#ff4444'; loginError.textContent = res2.error; }
-        else { lastLoginCredentials = { username, password }; startGame(); }
-      });
-    }
-  });
+  if (username.length < 3) { loginError.textContent = 'Nome de usuário deve ter pelo menos 3 caracteres.'; return; }
+  if (password.length < 4) { loginError.textContent = 'Senha deve ter pelo menos 4 caracteres.'; return; }
+  loginError.textContent = '';
+  showCharCreation(username, password);
 });
 
 // Enter key to login
@@ -1861,6 +2034,264 @@ function startGame() {
   gameScreen.style.display = 'flex';
   resizeCanvas();
   requestAnimationFrame(gameLoop);
+}
+
+// ============= CHARACTER CREATION =============
+let pendingRegister = null;
+let selectedHairstyle = 'cabelosocial';
+let selectedHairColor = 'castanho';
+let charCreationMode = 'new'; // 'new' ou 'existing'
+
+const HAIR_COLORS = {
+  castanho:     '#7B3F00',
+  ruivo:        '#9B2D0F',
+  loiro_escuro: '#F0EAE2',
+  loiro:        '#C49510',
+  preto:        '#080808',
+  grisalho:     '#D6D2CC',
+};
+
+// Helpers HSL ─ usados pelo tinting
+function _rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return [h, s, l];
+}
+function _hslToRgb(h, s, l) {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue = (t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  };
+  return [Math.round(hue(h + 1/3) * 255), Math.round(hue(h) * 255), Math.round(hue(h - 1/3) * 255)];
+}
+
+// Cache de sprites tintados (por corte+cor)
+const hairTintCache = {};
+function getTintedHair(spriteName, color) {
+  if (!color || color === 'castanho') return sprites[spriteName] || null;
+  const key = spriteName + '_' + color;
+  if (hairTintCache[key]) return hairTintCache[key];
+  const spr = sprites[spriteName];
+  if (!spr || !spr.complete || !spr.naturalWidth) return spr || null;
+
+  const oc = document.createElement('canvas');
+  oc.width = spr.naturalWidth;
+  oc.height = spr.naturalHeight;
+  const ctx = oc.getContext('2d');
+  ctx.drawImage(spr, 0, 0);
+
+  const imgData = ctx.getImageData(0, 0, oc.width, oc.height);
+  const d = imgData.data;
+
+  // Pré-calcula H e S da cor-alvo (L será substituída pela do pixel original)
+  const hex = HAIR_COLORS[color] || color;
+  const tr = parseInt(hex.slice(1, 3), 16);
+  const tg = parseInt(hex.slice(3, 5), 16);
+  const tb = parseInt(hex.slice(5, 7), 16);
+  const [th, ts] = _rgbToHsl(tr, tg, tb);
+
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 10) continue; // transparente
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const sat  = maxC > 0 ? (maxC - minC) / maxC : 0;
+    const lum  = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    // Preserva contornos pretos/escuros (baixo brilho + pouca saturação)
+    if (lum < 65 && sat < 0.45) continue;
+
+    // Preserva pele: tom pêssego tem B bem acima de 0 (B>55) com R>B e G>B
+    // Marrom do cabelo tem B≈0-30, por isso não confunde
+    if (r > b && g > b && b > 55) continue;
+
+    // Substituição de matiz: usa H+S do alvo, ajusta L conforme escuro/claro do alvo
+    const [, , lo] = _rgbToHsl(r, g, b);
+    // Preto: comprime L para ficar escuro. Branco neve: empurra L para quase 1.
+    // Demais cores: preserva L original do pixel
+    let outL;
+    if (color === 'preto')   outL = lo * 0.35;
+    else if (color === 'branco') outL = 0.72 + lo * 0.28; // mapeia [0-1] para [0.72-1.0]
+    else                     outL = lo;
+    const [nr, ng, nb] = _hslToRgb(th, ts, outL);
+    d[i] = nr; d[i + 1] = ng; d[i + 2] = nb;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  hairTintCache[key] = oc;
+  return oc;
+}
+
+// Abre o painel só para escolha de cabelo (conta já existe e está logada)
+function showHairSelection(currentHairstyle, currentHairColor) {
+  charCreationMode = 'existing';
+  const initStyle = (currentHairstyle && currentHairstyle !== 'nenhum') ? currentHairstyle : 'cabelosocial';
+  const initColor = currentHairColor || 'castanho';
+  selectedHairstyle = initStyle;
+  selectedHairColor = initColor;
+  document.getElementById('char-creation-screen').style.display = 'flex';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('char-creation-error').textContent = '';
+  document.getElementById('btn-confirm-char').disabled = false;
+  document.getElementById('btn-confirm-char').textContent = 'Confirmar Corte ✂️';
+  document.getElementById('btn-back-char').style.display = 'none'; // sem voltar
+  // Esconde o campo de nome
+  const nameGroup = document.getElementById('char-name-group');
+  if (nameGroup) nameGroup.style.display = 'none';
+  document.getElementById('char-creation-box').querySelector('h2').textContent = '✂️ Escolha seu Corte de Cabelo';
+  document.querySelectorAll('.hair-option').forEach(el => el.classList.remove('selected'));
+  const styleOpt = document.querySelector(`.hair-option[data-style="${initStyle}"]`) || document.querySelector('.hair-option[data-style="cabelosocial"]');
+  if (styleOpt) styleOpt.classList.add('selected');
+  document.querySelectorAll('#haircolor-options .color-swatch').forEach(el => el.classList.remove('selected'));
+  const colorOpt = document.querySelector(`#haircolor-options .color-swatch[data-color="${initColor}"]`) || document.querySelector('#haircolor-options .color-swatch[data-color="castanho"]');
+  if (colorOpt) colorOpt.classList.add('selected');
+  renderCharCreationPreview();
+}
+
+function showCharCreation(username, password) {
+  charCreationMode = 'new';
+  pendingRegister = { username, password };
+  selectedHairstyle = 'cabelosocial';
+  selectedHairColor = 'castanho';
+  document.getElementById('char-creation-screen').style.display = 'flex';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('char-name-input').value = '';
+  document.getElementById('char-creation-error').textContent = '';
+  document.getElementById('btn-confirm-char').disabled = false;
+  document.getElementById('btn-confirm-char').textContent = 'Entrar no Mundo ⚔️';
+  document.getElementById('btn-back-char').style.display = '';
+  const nameGroup = document.getElementById('char-name-group');
+  if (nameGroup) nameGroup.style.display = '';
+  document.getElementById('char-creation-box').querySelector('h2').textContent = '⚔️ Criar Personagem';
+  document.querySelectorAll('.hair-option').forEach(el => el.classList.remove('selected'));
+  const firstOpt = document.querySelector('.hair-option[data-style="cabelosocial"]');
+  if (firstOpt) firstOpt.classList.add('selected');
+  document.querySelectorAll('#haircolor-options .color-swatch').forEach(el => el.classList.remove('selected'));
+  const firstColor2 = document.querySelector('#haircolor-options .color-swatch[data-color="castanho"]');
+  if (firstColor2) firstColor2.classList.add('selected');
+  renderCharCreationPreview();
+}
+
+function hideCharCreation() {
+  document.getElementById('char-creation-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function selectHairstyle(style) {
+  selectedHairstyle = style;
+  document.querySelectorAll('.hair-option').forEach(el => el.classList.remove('selected'));
+  const opt = document.querySelector(`.hair-option[data-style="${style}"]`);
+  if (opt) opt.classList.add('selected');
+  renderCharCreationPreview();
+}
+
+function selectHairColor(color) {
+  selectedHairColor = color;
+  document.querySelectorAll('#haircolor-options .color-swatch').forEach(el => el.classList.remove('selected'));
+  const sw = document.querySelector(`#haircolor-options .color-swatch[data-color="${color}"]`);
+  if (sw) sw.classList.add('selected');
+  renderCharCreationPreview();
+}
+
+function renderCharCreationPreview() {
+  const canvas = document.getElementById('char-preview-canvas');
+  if (!canvas) return;
+  const ctx2 = canvas.getContext('2d');
+  const W = canvas.width;   // 200
+  const H = canvas.height;  // 220
+  ctx2.clearRect(0, 0, W, H);
+  // Draw background
+  ctx2.fillStyle = 'rgba(20,30,50,0.7)';
+  ctx2.fillRect(0, 0, W, H);
+  // Draw player base sprite at y=10 (leaving 10px top for hair extra)
+  const spr = sprites['parado'];
+  if (spr && spr.complete && spr.naturalWidth > 0) {
+    ctx2.drawImage(spr, 0, 10, W, 200);
+  } else {
+    ctx2.fillStyle = '#4488ff';
+    ctx2.fillRect(60, 50, 80, 130);
+    ctx2.fillStyle = '#ffcc88';
+    ctx2.beginPath(); ctx2.arc(100, 48, 30, 0, Math.PI * 2); ctx2.fill();
+  }
+  // Draw hairstyle overlay
+  const hairKey = selectedHairstyle;
+  if (hairKey && hairKey !== 'nenhum') {
+    const hairImg = getTintedHair(hairKey, selectedHairColor);
+    if (hairImg) ctx2.drawImage(hairImg, 0, 0, W, 210);
+  }
+}
+
+async function confirmCharCreation() {
+  const errEl = document.getElementById('char-creation-error');
+  const btn = document.getElementById('btn-confirm-char');
+
+  // Modo conta existente: apenas salva o cabelo e entra
+  if (charCreationMode === 'existing') {
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    socket.emit('setHairstyle', { hairstyle: selectedHairstyle, hair_color: selectedHairColor }, (res) => {
+      document.getElementById('char-creation-screen').style.display = 'none';
+      startGame();
+    });
+    return;
+  }
+
+  // Modo nova conta
+  const charName = document.getElementById('char-name-input').value.trim();
+  if (!charName || charName.length < 2) {
+    errEl.textContent = 'Nome do personagem deve ter pelo menos 2 caracteres.';
+    return;
+  }
+  if (charName.length > 20) {
+    errEl.textContent = 'Nome do personagem deve ter no máximo 20 caracteres.';
+    return;
+  }
+  errEl.textContent = '';
+  const { username, password } = pendingRegister;
+  btn.disabled = true;
+  btn.textContent = 'Criando...';
+  socket.emit('register', { username, password, charName, hairstyle: selectedHairstyle, hair_color: selectedHairColor }, (res) => {
+    if (res.error) {
+      errEl.textContent = res.error;
+      btn.disabled = false;
+      btn.textContent = 'Entrar no Mundo ⚔️';
+      setTimeout(() => {
+        hideCharCreation();
+        loginError.style.color = '#ff4444';
+        loginError.textContent = res.error;
+      }, 1500);
+    } else {
+      socket.emit('login', { username, password }, (res2) => {
+        document.getElementById('char-creation-screen').style.display = 'none';
+        if (res2.error) {
+          document.getElementById('login-screen').style.display = 'flex';
+          loginError.style.color = '#ff4444';
+          loginError.textContent = res2.error;
+        } else {
+          lastLoginCredentials = { username, password };
+          startGame();
+        }
+      });
+    }
+  });
 }
 
 // ============= SOCKET EVENTS =============
@@ -1884,7 +2315,8 @@ socket.on('mapData', (data) => {
   userZoom = null;
   // Clear other players interpolation cache on map change
   otherPlayersCache = {};
-  transitioning = false;
+  // NOTE: transitioning is reset in charData, after position is updated,
+  // to avoid the race where old y triggers an immediate next transition.
 });
 
 socket.on('npcData', (data) => { npcs = data; });
@@ -1894,6 +2326,9 @@ socket.on('charData', (data) => {
   Object.assign(myChar, data);
   if (data.quadrant) currentQuadrant = data.quadrant;
   updateStatusUI();
+  // Reset transition lock AFTER position is updated so the game loop
+  // never sees the stale old-map y-value with the new map's neighbors.
+  transitioning = false;
 });
 
 socket.on('gameState', (data) => {
@@ -1919,6 +2354,7 @@ socket.on('gameState', (data) => {
   }
   otherPlayers = newPlayers;
   nearbyEnemies = data.enemies;
+  bossSpells = data.bossSpells || [];
   groundItems = data.groundItems || [];
   npcQuestStatus = data.npcQuestStatus || {};
 });
@@ -1984,7 +2420,7 @@ socket.on('inventoryUpdate', (data) => {
   // Registrar nomes de itens para uso nos slots de equipamento
   for (const item of data) {
     if (item.item_id && item.name) {
-      ITEMS_CLIENT[item.item_id] = { name: item.name, icon: item.icon || null };
+      ITEMS_CLIENT[item.item_id] = { name: item.name, icon: item.icon || null, rarity: item.rarity || null };
     }
   }
   updateInventoryUI();
@@ -2002,7 +2438,7 @@ socket.on('npcDialog', (data) => {
 socket.on('death', (data) => {
   if (myChar) {
     myChar.silver = data.silver;
-    myChar.x = 40; myChar.y = 30;
+    myChar.x = 50; myChar.y = 47;
     transitioning = false;
     document.getElementById('death-screen').style.display = 'flex';
   }
@@ -2027,9 +2463,23 @@ document.addEventListener('keydown', (e) => {
     case 'e': case 'E':
       interactNearestNPC();
       break;
-    case 'f': case 'F':
+    case 'f': case 'F': {
+      // Check for dead boss loot first
+      const deadBoss = nearbyEnemies.find(e => e.type === 'bossskeleton' && e.dead && e.lootReady);
+      if (deadBoss && myChar) {
+        const dist = Math.sqrt((myChar.x - deadBoss.x)**2 + (myChar.y - deadBoss.y)**2);
+        if (dist < 3) {
+          if (!bossLootActive) {
+            bossLootActive = true;
+            bossLootStartTime = Date.now();
+            socket.emit('startBossLoot');
+          }
+          break;
+        }
+      }
       pickupNearestGroundItem();
       break;
+    }
     case 'Escape':
       if (currentDialog) closeDialog();
       targetEnemy = null;
@@ -2079,17 +2529,19 @@ canvas.addEventListener('click', (e) => {
 
   // Check if clicked on enemy â€” target and attack immediately
   let clickedEnemy = null;
-  let closestDist = 1.5; // click tolerance in tiles
+  let closestDist = Infinity;
   for (const enemy of nearbyEnemies) {
+    const tolerance = enemy.type === 'bossskeleton' ? 3.0 : 1.5;
     const d = Math.sqrt((wx - enemy.x)**2 + (wy - enemy.y)**2);
-    if (d < closestDist) { closestDist = d; clickedEnemy = enemy; }
+    if (d < tolerance && d < closestDist) { closestDist = d; clickedEnemy = enemy; }
   }
   if (clickedEnemy) {
     targetEnemy = clickedEnemy;
     // Attack immediately on click
     const now = Date.now();
+    const attackRange = clickedEnemy.type === 'bossskeleton' ? 4 : 2;
     const dist = Math.sqrt((myChar.x - clickedEnemy.x)**2 + (myChar.y - clickedEnemy.y)**2);
-    if (dist < 2 && now - lastAttackTime > 1000) {
+    if (dist < attackRange && now - lastAttackTime > 1000) {
       lastAttackTime = now;
       socket.emit('attack', { targetId: clickedEnemy.id });
     }
@@ -2218,7 +2670,12 @@ function gameLoop(timestamp) {
 function update(dt) {
   if (transitioning) return; // Wait for quadrant transition to complete
 
-  // Movement
+  // Boss loot collection: check 5s elapsed
+  if (bossLootActive && bossLootStartTime > 0 && Date.now() - bossLootStartTime >= 5000) {
+    socket.emit('collectBossLoot');
+    bossLootActive = false;
+    bossLootStartTime = 0;
+  }
   let dx = 0, dy = 0;
   if (keys.up) dy -= 1;
   if (keys.down) dy += 1;
@@ -2450,6 +2907,9 @@ function render() {
   // Sort by Y
   entities.sort((a, b) => a.y - b.y);
 
+  // Draw boss spell effects (under all entities)
+  drawBossSpells();
+
   // Draw entities
   for (const ent of entities) {
     switch (ent.type) {
@@ -2582,6 +3042,24 @@ function drawMyPlayer(char) {
     spriteName = (moving && animFrame === 1) ? 'andando' : 'parado';
     const shouldFlip = (char.direction === 'right' || char.direction === 'up');
 
+    // Capa (renderizada ATRÁS do boneco, antes do sprite base)
+    if (char.equipped_chest && CAPE_SPRITES[char.equipped_chest]) {
+      const capePair = CAPE_SPRITES[char.equipped_chest];
+      const capeName = (moving && animFrame === 1) ? capePair[1] : capePair[0];
+      const capeSpr = sprites[capeName];
+      if (capeSpr && capeSpr.complete && capeSpr.naturalWidth > 0) {
+        if (!shouldFlip) {
+          ctx.drawImage(capeSpr, sx - half, sy - S * 0.75, S, S);
+        } else {
+          ctx.save();
+          ctx.translate(sx, sy - S * 0.75);
+          ctx.scale(-1, 1);
+          ctx.drawImage(capeSpr, -half, 0, S, S);
+          ctx.restore();
+        }
+      }
+    }
+
     const spr = sprites[spriteName];
     if (spr && spr.complete && spr.naturalWidth > 0) {
       if (!shouldFlip) {
@@ -2602,19 +3080,19 @@ function drawMyPlayer(char) {
       ctx.fill();
     }
 
-    // Weapon overlay sprite
-    if (char.equipped_weapon && WEAPON_SPRITES[char.equipped_weapon]) {
-      const ws = WEAPON_SPRITES[char.equipped_weapon];
-      const wSpriteName = (moving && animFrame === 1) ? ws[1] : ws[0];
-      const wSpr = sprites[wSpriteName];
-      if (wSpr && wSpr.complete && wSpr.naturalWidth > 0) {
+    // Hair overlay (on top of body/equipment, 210px tall alinhado pelo fundo)
+    if (char.hairstyle && char.hairstyle !== 'nenhum' && !char.equipped_helmet) {
+      const hairImg = getTintedHair(char.hairstyle, char.hair_color || 'castanho');
+      if (hairImg) {
+        const hairH = S * 1.05;
+        const hairY = sy - S * 0.75 - S * 0.05;
         if (!shouldFlip) {
-          ctx.drawImage(wSpr, sx - half, sy - S * 0.75, S, S);
+          ctx.drawImage(hairImg, sx - half, hairY, S, hairH);
         } else {
           ctx.save();
-          ctx.translate(sx, sy - S * 0.75);
+          ctx.translate(sx, hairY);
           ctx.scale(-1, 1);
-          ctx.drawImage(wSpr, -half, 0, S, S);
+          ctx.drawImage(hairImg, -half, 0, S, hairH);
           ctx.restore();
         }
       }
@@ -2634,15 +3112,36 @@ function drawMyPlayer(char) {
         const eName = (moving && animFrame === 1) ? pair[1] : pair[0];
         const eSpr = sprites[eName];
         if (eSpr && eSpr.complete && eSpr.naturalWidth > 0) {
+          const isTall = layer.slot === 'equipped_helmet' && TALL_HELMET_IDS.has(itemId);
+          const drawH = isTall ? S * 1.05 : S;
+          const drawY = isTall ? sy - S * 0.75 - S * 0.05 : sy - S * 0.75;
           if (!shouldFlip) {
-            ctx.drawImage(eSpr, sx - half, sy - S * 0.75, S, S);
+            ctx.drawImage(eSpr, sx - half, drawY, S, drawH);
           } else {
             ctx.save();
-            ctx.translate(sx, sy - S * 0.75);
+            ctx.translate(sx, drawY);
             ctx.scale(-1, 1);
-            ctx.drawImage(eSpr, -half, 0, S, S);
+            ctx.drawImage(eSpr, -half, 0, S, drawH);
             ctx.restore();
           }
+        }
+      }
+    }
+
+    // Weapon overlay sprite - desenhado DEPOIS de tudo (fica na frente das armaduras)
+    if (char.equipped_weapon && WEAPON_SPRITES[char.equipped_weapon]) {
+      const ws = WEAPON_SPRITES[char.equipped_weapon];
+      const wSpriteName = (moving && animFrame === 1) ? ws[1] : ws[0];
+      const wSpr = sprites[wSpriteName];
+      if (wSpr && wSpr.complete && wSpr.naturalWidth > 0) {
+        if (!shouldFlip) {
+          ctx.drawImage(wSpr, sx - half, sy - S * 0.75, S, S);
+        } else {
+          ctx.save();
+          ctx.translate(sx, sy - S * 0.75);
+          ctx.scale(-1, 1);
+          ctx.drawImage(wSpr, -half, 0, S, S);
+          ctx.restore();
         }
       }
     }
@@ -2652,7 +3151,7 @@ function drawMyPlayer(char) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 11px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText(char.username || 'Jogador', sx, sy - S * 1.2);
+  ctx.fillText(char.char_name || char.username || 'Jogador', sx, sy - S * 1.2);
 
   // HP bar below name
   drawHPBar(sx, sy - S * 1.05, char.hp, char.max_hp, '#44cc44');
@@ -2765,6 +3264,24 @@ function drawOtherPlayer(op) {
     spriteName = (op.moving && opAnimFrame === 1) ? 'andando' : 'parado';
     const shouldFlip = (op.direction === 'right' || op.direction === 'up');
 
+    // Capa (renderizada ATRÁS do boneco, antes do sprite base)
+    if (op.equipped_chest && CAPE_SPRITES[op.equipped_chest]) {
+      const capePair = CAPE_SPRITES[op.equipped_chest];
+      const capeName = (op.moving && opAnimFrame === 1) ? capePair[1] : capePair[0];
+      const capeSpr = sprites[capeName];
+      if (capeSpr && capeSpr.complete && capeSpr.naturalWidth > 0) {
+        if (!shouldFlip) {
+          ctx.drawImage(capeSpr, sx - half, sy - S * 0.75, S, S);
+        } else {
+          ctx.save();
+          ctx.translate(sx, sy - S * 0.75);
+          ctx.scale(-1, 1);
+          ctx.drawImage(capeSpr, -half, 0, S, S);
+          ctx.restore();
+        }
+      }
+    }
+
     const spr = sprites[spriteName];
     if (spr && spr.complete && spr.naturalWidth > 0) {
       if (!shouldFlip) {
@@ -2783,7 +3300,55 @@ function drawOtherPlayer(op) {
       ctx.beginPath(); ctx.arc(sx, sy - S * 0.56, S * 0.19, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Weapon overlay sprite (other player)
+    // Hair overlay (other player)
+    if (op.hairstyle && op.hairstyle !== 'nenhum' && !op.equipped_helmet) {
+      const hairImg = getTintedHair(op.hairstyle, op.hair_color || 'castanho');
+      if (hairImg) {
+        const hairH = S * 1.05;
+        const hairY = sy - S * 0.75 - S * 0.05;
+        if (!shouldFlip) {
+          ctx.drawImage(hairImg, sx - half, hairY, S, hairH);
+        } else {
+          ctx.save();
+          ctx.translate(sx, hairY);
+          ctx.scale(-1, 1);
+          ctx.drawImage(hairImg, -half, 0, S, hairH);
+          ctx.restore();
+        }
+      }
+    }
+
+    // Equipment overlay layers: Calças > Botas > Peitoral > Elmo (bottom to top)
+    const equipLayers = [
+      { slot: 'equipped_legs', map: LEGS_SPRITES },
+      { slot: 'equipped_boots', map: BOOTS_SPRITES },
+      { slot: 'equipped_chest', map: CHEST_SPRITES },
+      { slot: 'equipped_helmet', map: HELMET_SPRITES },
+    ];
+    for (const layer of equipLayers) {
+      const itemId = op[layer.slot];
+      if (itemId && layer.map[itemId]) {
+        const pair = layer.map[itemId];
+        const eName = (op.moving && opAnimFrame === 1) ? pair[1] : pair[0];
+        const eSpr = sprites[eName];
+        if (eSpr && eSpr.complete && eSpr.naturalWidth > 0) {
+          const isTall = layer.slot === 'equipped_helmet' && TALL_HELMET_IDS.has(itemId);
+          const drawH = isTall ? S * 1.05 : S;
+          const drawY = isTall ? sy - S * 0.75 - S * 0.05 : sy - S * 0.75;
+          if (!shouldFlip) {
+            ctx.drawImage(eSpr, sx - half, drawY, S, drawH);
+          } else {
+            ctx.save();
+            ctx.translate(sx, drawY);
+            ctx.scale(-1, 1);
+            ctx.drawImage(eSpr, -half, 0, S, drawH);
+            ctx.restore();
+          }
+        }
+      }
+    }
+
+    // Weapon overlay sprite (other player) - desenhado DEPOIS de tudo (fica na frente)
     if (op.equipped_weapon && WEAPON_SPRITES[op.equipped_weapon]) {
       const ws = WEAPON_SPRITES[op.equipped_weapon];
       const wSpriteName = (op.moving && opAnimFrame === 1) ? ws[1] : ws[0];
@@ -2800,39 +3365,12 @@ function drawOtherPlayer(op) {
         }
       }
     }
-
-    // Equipment overlay layers (other player): Calças > Botas > Peitoral > Elmo
-    const equipLayers = [
-      { slot: 'equipped_legs', map: LEGS_SPRITES },
-      { slot: 'equipped_boots', map: BOOTS_SPRITES },
-      { slot: 'equipped_chest', map: CHEST_SPRITES },
-      { slot: 'equipped_helmet', map: HELMET_SPRITES },
-    ];
-    for (const layer of equipLayers) {
-      const itemId = op[layer.slot];
-      if (itemId && layer.map[itemId]) {
-        const pair = layer.map[itemId];
-        const eName = (op.moving && opAnimFrame === 1) ? pair[1] : pair[0];
-        const eSpr = sprites[eName];
-        if (eSpr && eSpr.complete && eSpr.naturalWidth > 0) {
-          if (!shouldFlip) {
-            ctx.drawImage(eSpr, sx - half, sy - S * 0.75, S, S);
-          } else {
-            ctx.save();
-            ctx.translate(sx, sy - S * 0.75);
-            ctx.scale(-1, 1);
-            ctx.drawImage(eSpr, -half, 0, S, S);
-            ctx.restore();
-          }
-        }
-      }
-    }
   }
 
   ctx.fillStyle = '#aaffaa';
   ctx.font = 'bold 11px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText(op.username, sx, sy - S * 1.2);
+  ctx.fillText(op.char_name || op.username, sx, sy - S * 1.2);
   drawHPBar(sx, sy - S * 1.05, op.hp, op.max_hp, '#44cc44');
 
   // Balão de fala de outro jogador
@@ -2848,19 +3386,30 @@ function drawEnemy(enemy) {
   const half = S / 2;
 
   if (enemy.type === 'skeleton') {
-    // Esqueleto: sprites esqueletoparado/esqueletoandando, originalmente virado pra DIREITA
+    // Esqueleto: sprites esqueletoparado/esqueletoandando/esqueletobatendo, originalmente virado pra DIREITA
     // Normal p/ direita e cima, flip p/ esquerda e baixo
-    const spriteName = (enemy.moving && enemyAnimFrame === 1) ? 'esqueletoandando' : 'esqueletoparado';
+    let spriteName;
+    if (enemy.animState === 'batendo') {
+      spriteName = 'esqueletobatendo';
+    } else {
+      spriteName = (enemy.moving && enemyAnimFrame === 1) ? 'esqueletoandando' : 'esqueletoparado';
+    }
     const shouldFlip = (enemy.direction === 'left' || enemy.direction === 'down');
     const spr = sprites[spriteName];
     if (spr && spr.complete && spr.naturalWidth > 0) {
+      // esqueletobatendo é 300px de largura (1.5x maior que o normal 200px)
+      const isBatendo = (spriteName === 'esqueletobatendo');
+      const drawW = isBatendo ? S * 1.5 : S;
+      const drawH = isBatendo ? S * (spr.naturalHeight / 200) : S;
+      const drawX = sx - drawW / 2;
+      const drawY = sy - S * 0.75;
       if (!shouldFlip) {
-        ctx.drawImage(spr, sx - half, sy - S * 0.75, S, S);
+        ctx.drawImage(spr, drawX, drawY, drawW, drawH);
       } else {
         ctx.save();
-        ctx.translate(sx, sy - S * 0.75);
+        ctx.translate(sx, drawY);
         ctx.scale(-1, 1);
-        ctx.drawImage(spr, -half, 0, S, S);
+        ctx.drawImage(spr, -drawW / 2, 0, drawW, drawH);
         ctx.restore();
       }
     } else {
@@ -2928,8 +3477,69 @@ function drawEnemy(enemy) {
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.arc(sx - S * 0.1, sy - S * 0.5, S * 0.12, 0, Math.PI * 2); ctx.fill();
     }
+  } else if (enemy.type === 'bossskeleton') {
+    const BS = S * 5; // Boss is drawn at 5x size
+    const bHalf = BS / 2;
+    if (enemy.dead && enemy.lootReady) {
+      // Dead / lootable: show boss7
+      const spr = sprites['boss7'];
+      if (spr && spr.complete && spr.naturalWidth > 0)
+        ctx.drawImage(spr, sx - bHalf, sy - BS * 0.75, BS, BS);
+      // "Press F" prompt
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold 12px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('[F] Coletar Loot', sx, sy - BS * 1.1);
+      // Loot progress bar
+      if (bossLootActive && bossLootStartTime > 0) {
+        const elapsed = Math.min(1, (Date.now() - bossLootStartTime) / 5000);
+        const bw = 70;
+        const barY = sy - BS * 0.95;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(sx - bw / 2, barY, bw, 8);
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(sx - bw / 2, barY, bw * elapsed, 8);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx - bw / 2, barY, bw, 8);
+      }
+      return;
+    }
+    // Alive: use animState as sprite key (boss1..boss6)
+    const bossSpriteName = enemy.animState || 'boss1';
+    const spr = sprites[bossSpriteName];
+    const shouldFlip = (enemy.direction === 'left' || enemy.direction === 'down');
+    if (spr && spr.complete && spr.naturalWidth > 0) {
+      if (!shouldFlip) {
+        ctx.drawImage(spr, sx - bHalf, sy - BS * 0.75, BS, BS);
+      } else {
+        ctx.save();
+        ctx.translate(sx, sy - BS * 0.75);
+        ctx.scale(-1, 1);
+        ctx.drawImage(spr, -bHalf, 0, BS, BS);
+        ctx.restore();
+      }
+    } else {
+      // Fallback silhouette
+      ctx.fillStyle = '#8800cc';
+      ctx.fillRect(sx - bHalf * 0.5, sy - BS * 0.7, BS * 0.5, BS * 0.7);
+    }
+    // Boss name
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 15px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Boss Esqueleto', sx, sy - BS * 0.83);
+    // Wide HP bar for boss
+    const bw = 80, bh = 6;
+    const bpct = Math.max(0, enemy.hp / enemy.maxHp);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(sx - bw/2 - 1, sy - BS * 0.77 - 1, bw + 2, bh + 2);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(sx - bw/2, sy - BS * 0.77, bw, bh);
+    ctx.fillStyle = '#ff2222';
+    ctx.fillRect(sx - bw/2, sy - BS * 0.77, bw * bpct, bh);
+    return;
   } else {
-    // Slime: sprite unico "slime", originalmente virado pra DIREITA
     const spr = sprites['slime'];
     const shouldFlip = (enemy.direction === 'left' || enemy.direction === 'down');
     if (spr && spr.complete && spr.naturalWidth > 0) {
@@ -2960,6 +3570,29 @@ function drawEnemy(enemy) {
 
   // HP bar below name
   drawHPBar(sx, sy - S * 1.05, enemy.hp, enemy.maxHp, '#ff4444');
+}
+
+// Draw boss spell effects on the ground (call before entities)
+function drawBossSpells() {
+  for (const spell of bossSpells) {
+    const sx = spell.x * TILE_SIZE - cameraX;
+    const sy = spell.y * TILE_SIZE - cameraY;
+    const spellSize = TILE_SIZE * 5;
+    const spriteName = spell.phase === 'warning' ? 'bossataque2' : 'bossataque1';
+    const spr = sprites[spriteName];
+    if (spr && spr.complete && spr.naturalWidth > 0) {
+      ctx.globalAlpha = spell.phase === 'warning' ? 0.75 : 1.0;
+      ctx.drawImage(spr, sx - spellSize / 2, sy - spellSize / 2, spellSize, spellSize);
+      ctx.globalAlpha = 1.0;
+    } else {
+      ctx.globalAlpha = spell.phase === 'warning' ? 0.55 : 0.9;
+      ctx.fillStyle = spell.phase === 'warning' ? '#ff8800' : '#ff0000';
+      ctx.beginPath();
+      ctx.arc(sx, sy, spellSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  }
 }
 
 function drawNPC(npc) {
@@ -3195,6 +3828,8 @@ function drawMinimap() {
         case T.TREE_MANGUE: ctx.fillStyle = '#2a6a20'; break;
         case T.TREE_PINHEIRO: ctx.fillStyle = '#0e4a20'; break;
         case T.TREE_PINOS: ctx.fillStyle = '#1a5a1a'; break;
+        case T.DEAD_GRASS: ctx.fillStyle = '#6b5a2a'; break;
+        case T.DEAD_DIRT: ctx.fillStyle = '#3a2e18'; break;
         default: ctx.fillStyle = '#000';
       }
       ctx.fillRect(mmX + tx * tileW, mmY + ty * tileH, Math.ceil(tileW), Math.ceil(tileH));
@@ -3256,7 +3891,7 @@ function drawMinimap() {
 // ============= UI UPDATES =============
 function updateStatusUI() {
   if (!myChar) return;
-  document.getElementById('char-name').textContent = myChar.username || 'Jogador';
+  document.getElementById('char-name').textContent = myChar.char_name || myChar.username || 'Jogador';
   document.getElementById('stat-level').textContent = myChar.level;
   document.getElementById('stat-silver').textContent = myChar.silver;
   document.getElementById('stat-hp-max').textContent = myChar.max_hp;
@@ -3361,10 +3996,16 @@ function updateInventoryUI() {
   }
   const visibleItems = myInventory.filter(item => !usedRowIds.has(item.id));
 
-  // Build a fixed 20-slot grid. visibleItems go in order, rest are empty.
-  const totalSlots = 20;
+  // Build slot map: slot_order (0-19) -> item (allows real gaps)
+  const slotMap = {};
+  for (const item of visibleItems) {
+    const pos = typeof item.slot_order === 'number' ? item.slot_order : 99;
+    if (pos >= 0 && pos < 30) slotMap[pos] = item;
+  }
+
+  const totalSlots = 30;
   for (let i = 0; i < totalSlots; i++) {
-    const item = visibleItems[i] || null;
+    const item = slotMap[i] || null;
     const slot = document.createElement('div');
     slot.className = 'inv-slot';
     slot.dataset.slotIndex = String(i);
@@ -3394,6 +4035,13 @@ function updateInventoryUI() {
         <span class="item-name">${item.name}</span>
         ${item.quantity > 1 ? `<span class="item-qty">x${item.quantity}</span>` : ''}
       `;
+
+      // Borda colorida por raridade
+      const rarityColor = item.rarity && RARITY_COLORS[item.rarity] ? RARITY_COLORS[item.rarity] : null;
+      if (rarityColor) {
+        slot.style.borderColor = rarityColor;
+        slot.style.boxShadow = `0 0 5px ${rarityColor}55`;
+      }
 
       // Tooltip
       slot.addEventListener('mouseenter', (e) => showItemTooltip(e, item));
@@ -3443,24 +4091,24 @@ function updateInventoryUI() {
       const draggedRowId = parseInt(e.dataTransfer.getData('text/plain'));
       if (!draggedRowId) return;
       const targetRowId = item ? item.id : null;
+      const targetSlotIndex = parseInt(slot.dataset.slotIndex);
       if (draggedRowId === targetRowId) return;
 
-      const dragIdx = myInventory.findIndex(r => r.id === draggedRowId);
-      if (dragIdx === -1) return;
+      // Persist on server
+      socket.emit('swapInvSlot', { id1: draggedRowId, id2: targetRowId || null, targetSlotIndex });
 
+      // Optimistic local update using slot_order directly
+      const draggedItem = myInventory.find(r => r.id === draggedRowId);
+      if (!draggedItem) return;
       if (targetRowId) {
-        // Swap the two items
-        const dropIdx = myInventory.findIndex(r => r.id === targetRowId);
-        if (dropIdx !== -1) {
-          const temp = myInventory[dragIdx];
-          myInventory[dragIdx] = myInventory[dropIdx];
-          myInventory[dropIdx] = temp;
+        const targetItem = myInventory.find(r => r.id === targetRowId);
+        if (targetItem) {
+          const tmp = draggedItem.slot_order;
+          draggedItem.slot_order = targetItem.slot_order;
+          targetItem.slot_order = tmp;
         }
       } else {
-        // Move dragged item to this empty slot position
-        const draggedItem = myInventory.splice(dragIdx, 1)[0];
-        // Insert at end (empty slots are at the end)
-        myInventory.push(draggedItem);
+        draggedItem.slot_order = targetSlotIndex;
       }
       updateInventoryUI();
     });
@@ -3481,8 +4129,12 @@ function showItemTooltip(e, item) {
   // Limitar a 2 linhas (~60 chars)
   if (descText.length > 60) descText = descText.substring(0, 57) + '...';
 
+  const rarityColor = item.rarity && RARITY_COLORS[item.rarity] ? RARITY_COLORS[item.rarity] : '#ffffff';
+  const rarityLabel = item.rarity && RARITY_LABELS[item.rarity] ? RARITY_LABELS[item.rarity] : null;
+
   tooltipEl.innerHTML = `
-    <div class="tip-name">${item.name}</div>
+    <div class="tip-name" style="color:${rarityColor}">${item.name}</div>
+    ${rarityLabel ? `<div class="tip-rarity" style="color:${rarityColor}">${rarityLabel}</div>` : ''}
     ${descText ? `<div class="tip-desc">${descText}</div>` : ''}
     <div class="tip-hint">Clique para equipar/usar | Direito para op\u00e7\u00f5es</div>
   `;
@@ -3558,15 +4210,22 @@ function hideItemContextMenu() {
 
 // ============= DROP CONFIRMATION POPUP =============
 function showDropConfirmation(item) {
-  // Remove any existing popup
   const existing = document.getElementById('drop-confirm-popup');
   if (existing) existing.remove();
 
+  const isStack = item.quantity > 1;
   const popup = document.createElement('div');
   popup.id = 'drop-confirm-popup';
   popup.innerHTML = `
     <div class="drop-confirm-box">
-      <p>Tem certeza que deseja dropar <strong>${item.name}</strong>${item.quantity > 1 ? ' x' + item.quantity : ''}?</p>
+      <p>Largar <strong>${item.name}</strong>${isStack ? ` (total: ${item.quantity})` : ''}?</p>
+      ${isStack ? `
+        <div class="drop-qty-row">
+          <label class="drop-qty-label">Quantidade:</label>
+          <input type="range" class="drop-qty-slider" min="1" max="${item.quantity}" value="${item.quantity}">
+          <input type="number" class="drop-qty-input" min="1" max="${item.quantity}" value="${item.quantity}">
+        </div>
+      ` : ''}
       <div class="drop-confirm-btns">
         <button class="drop-btn-cancel">Cancelar</button>
         <button class="drop-btn-confirm">Largar</button>
@@ -3575,9 +4234,27 @@ function showDropConfirmation(item) {
   `;
   document.body.appendChild(popup);
 
+  // Sync slider <-> input
+  if (isStack) {
+    const slider = popup.querySelector('.drop-qty-slider');
+    const numInput = popup.querySelector('.drop-qty-input');
+    slider.addEventListener('input', () => { numInput.value = slider.value; });
+    numInput.addEventListener('input', () => {
+      let v = parseInt(numInput.value) || 1;
+      v = Math.max(1, Math.min(item.quantity, v));
+      numInput.value = v;
+      slider.value = v;
+    });
+  }
+
   popup.querySelector('.drop-btn-cancel').addEventListener('click', () => popup.remove());
   popup.querySelector('.drop-btn-confirm').addEventListener('click', () => {
-    socket.emit('dropItem', { invId: item.id, itemId: item.item_id, quantity: item.quantity });
+    let qty = item.quantity;
+    if (isStack) {
+      qty = parseInt(popup.querySelector('.drop-qty-input').value) || 1;
+      qty = Math.max(1, Math.min(item.quantity, qty));
+    }
+    socket.emit('dropItem', { invId: item.id, itemId: item.item_id, quantity: qty });
     popup.remove();
   });
 }
@@ -3653,6 +4330,38 @@ function showNpcDialog(data) {
       closeDialog();
     });
     btns.appendChild(completeBtn);
+  }
+
+  // Shop (Ferreiro)
+  if (data.isShop && data.shopItems && data.shopItems.length > 0) {
+    const shopDiv = document.createElement('div');
+    shopDiv.className = 'craft-recipes';
+    shopDiv.innerHTML = '<h4 style="color:#d4a750;margin:8px 0 4px;">🛍️ Itens à venda:</h4>' +
+      `<div style="color:#aaa;font-size:12px;margin-bottom:6px;">Suas pratas: <strong style="color:#f5c518;">${data.silverBalance}</strong></div>`;
+    for (const item of data.shopItems) {
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'craft-recipe-item';
+      itemDiv.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${item.icon ? `<img src="${item.icon}" style="width:32px;height:32px;image-rendering:pixelated;" />` : ''}
+          <div>
+            <div class="craft-recipe-name">${item.name}</div>
+            <div class="craft-recipe-desc" style="color:#f5c518;">${item.price} pratas</div>
+          </div>
+        </div>
+      `;
+      const buyBtn = document.createElement('button');
+      buyBtn.textContent = data.silverBalance >= item.price ? 'Comprar' : 'Prata insuficiente';
+      buyBtn.className = data.silverBalance >= item.price ? 'dialog-btn-accept craft-btn' : 'dialog-btn-close craft-btn disabled';
+      buyBtn.disabled = data.silverBalance < item.price;
+      buyBtn.addEventListener('click', () => {
+        socket.emit('buyItem', { itemId: item.itemId });
+        closeDialog();
+      });
+      itemDiv.appendChild(buyBtn);
+      shopDiv.appendChild(itemDiv);
+    }
+    btns.appendChild(shopDiv);
   }
 
   // Crafting recipes (Artesão)

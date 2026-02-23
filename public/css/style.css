@@ -671,6 +671,7 @@ body {
 }
 
 .item-tooltip .tip-name { color: #d4a750; font-weight: bold; font-size: 13px; }
+.item-tooltip .tip-rarity { font-size: 11px; font-style: italic; margin-top: 2px; }
 .item-tooltip .tip-desc { color: #aaa; margin-top: 4px; line-height: 1.3; }
 .item-tooltip .tip-hint { color: #666; font-size: 10px; margin-top: 6px; font-style: italic; }
 
@@ -770,7 +771,42 @@ body {
 }
 .drop-btn-confirm:hover { background: linear-gradient(180deg, #dd4444, #993333); }
 
-/* ============= DRAG & DROP ============= */
+/* ============= DROP QUANTITY SELECTOR ============= */
+.drop-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.drop-qty-label {
+  color: #b8a88a;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.drop-qty-slider {
+  flex: 1;
+  min-width: 100px;
+  max-width: 140px;
+  accent-color: #d4a750;
+  cursor: pointer;
+  height: 4px;
+}
+.drop-qty-input {
+  width: 54px;
+  background: #1a0e05;
+  border: 1px solid #6b4c2a;
+  color: #e0d5c0;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 14px;
+  font-weight: bold;
+  text-align: center;
+}
+.drop-qty-input:focus { outline: none; border-color: #d4a750; }
+
+
 .inv-slot.dragging {
   opacity: 0.4;
   border-color: #d4a750;
@@ -817,4 +853,143 @@ body {
 .craft-btn.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ============= CHARACTER CREATION ============= */
+#char-creation-screen {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, #2a1a0a 0%, #0a0502 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+#char-creation-box {
+  background: linear-gradient(180deg, #2a1a0a, #1a0e05);
+  border: 2px solid #6b4c2a;
+  border-radius: 12px;
+  padding: 32px 40px;
+  width: 640px;
+  max-width: 96vw;
+  box-shadow: 0 0 40px rgba(107, 76, 42, 0.4), inset 0 0 20px rgba(0,0,0,0.5);
+}
+
+#char-creation-box h2 {
+  text-align: center;
+  color: #d4a750;
+  font-size: 24px;
+  margin: 0 0 24px 0;
+  text-shadow: 0 0 10px rgba(212, 167, 80, 0.5);
+}
+
+#char-creation-content {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+#char-preview-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#char-preview-canvas {
+  width: 160px;
+  height: 176px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid #6b4c2a;
+  border-radius: 8px;
+}
+
+.preview-label {
+  color: #8a7a60;
+  font-size: 12px;
+  margin: 0;
+}
+
+#char-creation-options {
+  flex: 1;
+}
+
+#hairstyle-options {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+#haircolor-options {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid #4a3520;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+
+.color-swatch:hover {
+  border-color: #8a7a60;
+  transform: scale(1.1);
+}
+
+.color-swatch.selected {
+  border-color: #d4a750;
+  transform: scale(1.15);
+  box-shadow: 0 0 6px rgba(212,167,80,0.6);
+}
+
+.hair-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 2px solid #4a3520;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.hair-option img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.hair-option:hover {
+  border-color: #8a7a60;
+  background: rgba(255,255,255,0.08);
+}
+
+.hair-option.selected {
+  border-color: #d4a750;
+  background: rgba(212, 167, 80, 0.12);
+}
+
+.hair-icon {
+  font-size: 26px;
+}
+
+.hair-name {
+  font-size: 12px;
+  color: #b8a88a;
+  font-weight: bold;
 }

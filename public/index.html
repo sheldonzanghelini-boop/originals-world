@@ -28,6 +28,69 @@
     </div>
   </div>
 
+  <!-- CHARACTER CREATION SCREEN -->
+  <div id="char-creation-screen" style="display:none;">
+    <div id="char-creation-box">
+      <h2>⚔️ Criar Personagem</h2>
+      <div id="char-creation-content">
+        <!-- Preview -->
+        <div id="char-preview-area">
+          <canvas id="char-preview-canvas" width="200" height="220"></canvas>
+          <p class="preview-label">Pré-visualização</p>
+        </div>
+        <!-- Options -->
+        <div id="char-creation-options">
+          <div class="form-group" id="char-name-group">
+            <label>Nome do Personagem</label>
+            <input type="text" id="char-name-input" maxlength="20" autocomplete="off" placeholder="Ex: Herói Aventureiro">
+          </div>
+          <div class="form-group">
+            <label>Corte de Cabelo</label>
+            <div id="hairstyle-options">
+              <div class="hair-option" data-style="nenhum" onclick="selectHairstyle('nenhum')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortesemcorte.png" alt="Sem Cabelo">
+              </div>
+              <div class="hair-option selected" data-style="cabelosocial" onclick="selectHairstyle('cabelosocial')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortesocial.png" alt="Social">
+              </div>
+              <div class="hair-option" data-style="cabelobagunçado" onclick="selectHairstyle('cabelobagunçado')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortebagunçado.png" alt="Bagunçado">
+              </div>
+              <div class="hair-option" data-style="cabelobuzzcut" onclick="selectHairstyle('cabelobuzzcut')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortebuzzcut.png" alt="Buzzcut">
+              </div>
+              <div class="hair-option" data-style="cabelotopete" onclick="selectHairstyle('cabelotopete')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortetopete.png" alt="Topete">
+              </div>
+              <div class="hair-option" data-style="cabelonormal" onclick="selectHairstyle('cabelonormal')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortenormal.png" alt="Normal">
+              </div>
+              <div class="hair-option" data-style="cabelodelado" onclick="selectHairstyle('cabelodelado')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortedelado.png" alt="De Lado">
+              </div>
+              <div class="hair-option" data-style="cabelosamurai" onclick="selectHairstyle('cabelosamurai')">
+                <img src="/assets/sprites/player/cabelo/fotos/cortesamurai.png" alt="Samurai">
+              </div>
+            </div>
+            <div id="haircolor-options">
+              <div class="color-swatch selected" data-color="castanho"     onclick="selectHairColor('castanho')"     title="Castanho"     style="background:#7B3F00;"></div>
+              <div class="color-swatch"          data-color="ruivo"        onclick="selectHairColor('ruivo')"        title="Ruivo"        style="background:#9B2D0F;"></div>
+              <div class="color-swatch"          data-color="loiro_escuro" onclick="selectHairColor('loiro_escuro')" title="Loiro Escuro" style="background:#C4A86C;"></div>
+              <div class="color-swatch"          data-color="loiro"        onclick="selectHairColor('loiro')"        title="Loiro"        style="background:#C49510;"></div>
+              <div class="color-swatch"          data-color="preto"        onclick="selectHairColor('preto')"        title="Preto"        style="background:#080808;"></div>
+              <div class="color-swatch"          data-color="grisalho"     onclick="selectHairColor('grisalho')"     title="Grisalho"     style="background:#D6D2CC; border-color:#aaa;"></div>
+            </div>
+          </div>
+          <div id="char-creation-error" class="error-msg"></div>
+          <div class="btn-row">
+            <button id="btn-back-char" class="btn-secondary" onclick="hideCharCreation()">← Voltar</button>
+            <button id="btn-confirm-char" class="btn-primary" onclick="confirmCharCreation()">Entrar no Mundo ⚔️</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- GAME SCREEN -->
   <div id="game-screen" style="display:none;">
     <div id="game-layout">

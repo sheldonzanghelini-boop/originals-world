@@ -74,6 +74,8 @@ let otherPlayers = {};
 let otherPlayersCache = {}; // interpolation: { id: { x, y, targetX, targetY, animFrame, animTimer } }
 let nearbyEnemies = [];
 let bossSpells = [];
+let staffSpells = [];
+let lastStaffCastTime = 0;
 let bossLootActive = false;
 let bossLootStartTime = 0;
 let npcs = [];
@@ -229,6 +231,7 @@ const ITEMS_CLIENT = {
   adagas_ossos: { name: 'Adagas de Ossos', icon: '/assets/icons/bossesqueleto/iconeadagaossos.png', rarity: 'uncommon' },
   espada_ossos: { name: 'Espada de Ossos', icon: '/assets/icons/bossesqueleto/iconeespadaossos.png', rarity: 'uncommon' },
   calca_boss_esqueleto: { name: 'Calça do Boss Esqueleto', icon: '/assets/icons/bossesqueleto/iconecalcabossesqueleto.png', rarity: 'uncommon' },
+  cajado_ossos: { name: 'Cajado de Ossos', icon: '/assets/icons/bossesqueleto/iconecajadoossos.png', rarity: 'rare' },
 };
 
 // Cores por grau de raridade
@@ -325,6 +328,8 @@ const spriteNames = [
   ['boss7', '/assets/sprites/bossskeleton/boss7.png'],
   ['bossataque1', '/assets/sprites/bossskeleton/ataque1.png'],
   ['bossataque2', '/assets/sprites/bossskeleton/ataque2.png'],
+  ['cajadoossosandando', '/assets/sprites/player/itens/Boss esqueleto/cajadoossosandando.png'],
+  ['cajadoossosparado', '/assets/sprites/player/itens/Boss esqueleto/cajadoossosparado.png'],
   // Itens do Boss Esqueleto
   ['peitoralossosandando', '/assets/sprites/player/itens/Boss esqueleto/peitoralossosandando.png'],
   ['peitoralossosparado', '/assets/sprites/player/itens/Boss esqueleto/peitoralossosparado.png'],
@@ -355,6 +360,7 @@ const WEAPON_SPRITES = {
   lanca_ossos: ['lancaossosparado', 'lancaossosandando'],
   adagas_ossos: ['adagaossosparado', 'adagaossosandando'],
   espada_ossos: ['espadaossosparado', 'espadaossosandando'],
+  cajado_ossos: ['cajadoossosparado', 'cajadoossosandando'],
 };
 
 // Mapa de item_id -> sprite names [parado, andando] para armaduras de peitoral
@@ -2355,6 +2361,7 @@ socket.on('gameState', (data) => {
   otherPlayers = newPlayers;
   nearbyEnemies = data.enemies;
   bossSpells = data.bossSpells || [];
+  staffSpells = data.staffSpells || [];
   groundItems = data.groundItems || [];
   npcQuestStatus = data.npcQuestStatus || {};
 });
@@ -2559,6 +2566,19 @@ canvas.addEventListener('click', (e) => {
     const dist = Math.sqrt((myChar.x - clickedItem.x)**2 + (myChar.y - clickedItem.y)**2);
     if (dist < 2) {
       socket.emit('pickupItem', { gid: clickedItem.gid });
+    }
+    return;
+  }
+
+  // Cajado de Ossos: conjura magia no chão se equipado
+  if (myChar.equipped_weapon === 'cajado_ossos') {
+    const now = Date.now();
+    const distToTile = Math.sqrt((myChar.x - wx)**2 + (myChar.y - wy)**2);
+    if (distToTile <= 3) {
+      if (now - lastStaffCastTime >= 3000) {
+        lastStaffCastTime = now;
+        socket.emit('staffMagic', { tx: wx, ty: wy });
+      }
     }
     return;
   }
@@ -2909,6 +2929,7 @@ function render() {
 
   // Draw boss spell effects (under all entities)
   drawBossSpells();
+  drawStaffSpells();
 
   // Draw entities
   for (const ent of entities) {
@@ -3570,6 +3591,29 @@ function drawEnemy(enemy) {
 
   // HP bar below name
   drawHPBar(sx, sy - S * 1.05, enemy.hp, enemy.maxHp, '#ff4444');
+}
+
+// Draw staff magic spells (cajado do jogador)
+function drawStaffSpells() {
+  for (const spell of staffSpells) {
+    const sx = spell.x * TILE_SIZE - cameraX;
+    const sy = spell.y * TILE_SIZE - cameraY;
+    const spellSize = TILE_SIZE * 2.0;
+    const spriteName = spell.phase === 'warning' ? 'bossataque2' : 'bossataque1';
+    const spr = sprites[spriteName];
+    if (spr && spr.complete && spr.naturalWidth > 0) {
+      ctx.globalAlpha = spell.phase === 'warning' ? 0.75 : 1.0;
+      ctx.drawImage(spr, sx - spellSize / 2, sy - spellSize / 2, spellSize, spellSize);
+      ctx.globalAlpha = 1.0;
+    } else {
+      ctx.globalAlpha = spell.phase === 'warning' ? 0.55 : 0.9;
+      ctx.fillStyle = spell.phase === 'warning' ? '#aa44ff' : '#7700ff';
+      ctx.beginPath();
+      ctx.arc(sx, sy, spellSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  }
 }
 
 // Draw boss spell effects on the ground (call before entities)

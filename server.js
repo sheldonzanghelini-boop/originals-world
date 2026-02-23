@@ -403,6 +403,12 @@ const ITEMS = {
     rarity: 'uncommon', defense: 0,
     icon: '/assets/icons/bossesqueleto/iconecalcabossesqueleto.png',
     description: 'Calça do Boss Esqueleto. (Incomum)'
+  },
+  cajado_ossos: {
+    id: 'cajado_ossos', name: 'Cajado de Ossos', type: 'weapon',
+    rarity: 'rare', hands: 2, damage: 0, attackCooldown: 9999999,
+    icon: '/assets/icons/bossesqueleto/iconecajadoossos.png',
+    description: 'Cajado do Boss Esqueleto. Conjura uma magia no chão. (Raro)'
   }
 };
 
@@ -410,7 +416,7 @@ const ITEMS = {
 const BOSS_LOOT_POOL = [
   'peitoral_ossos', 'ombreiras_boss_esqueleto', 'peitoral_boss_esqueleto',
   'peitoral_boss_esqueleto_capa', 'capacete_ossos', 'elmo_ossos', 'elmo_caveira',
-  'lanca_ossos', 'adagas_ossos', 'espada_ossos', 'calca_boss_esqueleto'
+  'lanca_ossos', 'adagas_ossos', 'espada_ossos', 'calca_boss_esqueleto', 'cajado_ossos'
 ];
 
 // Receitas de crafting do Artesão
@@ -2088,6 +2094,10 @@ spawnEnemies();
 // ============================
 const bossSpells = [];
 let bossSpellIdCounter = 0;
+
+// Staff magic (cajado do jogador)
+const staffSpells = [];
+let staffSpellIdCounter = 0;
 enemies.push({
   id: 'boss_c5',
   type: 'bossskeleton',
@@ -2430,6 +2440,29 @@ io.on('connection', (socket) => {
     saveCharacter(p);
     boss.lootReady = false;
     boss.lootCollectorId = null;
+  });
+
+  socket.on('staffMagic', ({ tx, ty }) => {
+    const p = players[socket.id];
+    if (!p || p.hp <= 0) return;
+    if (p.equipped_weapon !== 'cajado_ossos') return;
+    const now = Date.now();
+    if (now - (p.lastStaffCastTime || 0) < 3000) return; // cooldown 3s
+    const dist = Math.sqrt((p.x - tx)**2 + (p.y - ty)**2);
+    if (dist > 3) return; // fora do alcance (3 tiles)
+    p.lastStaffCastTime = now;
+    const dmg = Math.round(getPlayerDamage(p) * 2.5);
+    staffSpells.push({
+      id: ++staffSpellIdCounter,
+      x: tx, y: ty,
+      quadrant: p.quadrant,
+      casterSocket: socket.id,
+      phase: 'warning',
+      activateTime: now + 1000,
+      expireTime: now + 2500,
+      damage: dmg,
+      damaged: false
+    });
   });
 
   socket.on('attack', ({ targetId }) => {
@@ -3438,7 +3471,36 @@ setInterval(() => {
     }
 
     const nearbyBossSpells = p.quadrant === 'C5' ? bossSpells.map(s => ({ id: s.id, x: s.x, y: s.y, phase: s.phase })) : [];
-    p.socket.volatile.emit('gameState', { players: nearbyPlayers, enemies: nearbyEnemies, groundItems: nearbyGround, npcQuestStatus, bossSpells: nearbyBossSpells });
+    const nearbyStaffSpells = staffSpells.filter(s => s.quadrant === p.quadrant).map(s => ({ id: s.id, x: s.x, y: s.y, phase: s.phase }));
+    p.socket.volatile.emit('gameState', { players: nearbyPlayers, enemies: nearbyEnemies, groundItems: nearbyGround, npcQuestStatus, bossSpells: nearbyBossSpells, staffSpells: nearbyStaffSpells });
+  }
+
+  // Process staff spells (cajado do jogador)
+  for (let si = staffSpells.length - 1; si >= 0; si--) {
+    const spell = staffSpells[si];
+    if (spell.phase === 'warning' && now >= spell.activateTime) {
+      spell.phase = 'active';
+      if (!spell.damaged) {
+        spell.damaged = true;
+        // Dano nos inimigos dentro do raio
+        for (const enemy of enemies) {
+          if (enemy.quadrant !== spell.quadrant || enemy.dead) continue;
+          const d = Math.sqrt((enemy.x - spell.x)**2 + (enemy.y - spell.y)**2);
+          if (d < 1.2) {
+            enemy.hp -= spell.damage;
+            const casterSocket = Object.values(players).find(pl => pl.socket && pl.socket.id === spell.casterSocket);
+            if (casterSocket) {
+              casterSocket.socket.emit('damageDealt', { targetId: enemy.id, damage: spell.damage, remainingHp: enemy.hp });
+            }
+            if (enemy.hp <= 0) {
+              enemy.dead = true;
+              enemy.deathTime = now;
+            }
+          }
+        }
+      }
+    }
+    if (now >= spell.expireTime) staffSpells.splice(si, 1);
   }
 
   // Cleanup ground items older than 5 minutes
@@ -3476,6 +3538,13 @@ process.on('unhandledRejection', (reason) => {
     'peitoral_boss_esqueleto_capa', 'capacete_ossos', 'elmo_ossos', 'elmo_caveira',
     'lanca_ossos', 'adagas_ossos', 'espada_ossos', 'calca_boss_esqueleto'
   ];
+  // +2 cajado_ossos para Sheldon testar
+  const hasCajado = db.prepare("SELECT COUNT(*) as c FROM inventory WHERE character_id = ? AND item_id = 'cajado_ossos'").get(char.id);
+  if ((hasCajado.c || 0) < 2) {
+    const toAdd = 2 - (hasCajado.c || 0);
+    for (let i = 0; i < toAdd; i++) addItemToInventory(char.id, 'cajado_ossos', 1);
+    console.log(`[Init] +${toAdd} cajado_ossos adicionado ao inventário de Sheldon`);
+  }
   for (const itemId of newBossItems) {
     const already = db.prepare('SELECT id FROM inventory WHERE character_id = ? AND item_id = ?').get(char.id, itemId);
     if (!already) {

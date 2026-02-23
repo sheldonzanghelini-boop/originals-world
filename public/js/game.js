@@ -1997,7 +1997,23 @@ const gameScreen = document.getElementById('game-screen');
 const loginError = document.getElementById('login-error');
 const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
+const registerError = document.getElementById('register-error');
 
+// ─ Toggle between login / register panels ─
+document.getElementById('link-to-register').addEventListener('click', () => {
+  document.getElementById('login-panel').style.display = 'none';
+  document.getElementById('register-panel').style.display = 'block';
+  loginError.textContent = '';
+  document.getElementById('reg-username').focus();
+});
+document.getElementById('link-to-login').addEventListener('click', () => {
+  document.getElementById('register-panel').style.display = 'none';
+  document.getElementById('login-panel').style.display = 'block';
+  if (registerError) registerError.textContent = '';
+  usernameInput.focus();
+});
+
+// ─ Login ─
 document.getElementById('btn-login').addEventListener('click', () => {
   const username = usernameInput.value.trim();
   const password = passwordInput.value;
@@ -2008,7 +2024,6 @@ document.getElementById('btn-login').addEventListener('click', () => {
     else {
       lastLoginCredentials = { username, password };
       if (res.needsHairstyle) {
-        // Mostrar seleção de cabelo antes de entrar no jogo (uso único)
         showHairSelection(res.hairstyle, res.hair_color);
       } else {
         startGame();
@@ -2017,22 +2032,31 @@ document.getElementById('btn-login').addEventListener('click', () => {
   });
 });
 
+// ─ Register (reads from register panel fields) ─
 document.getElementById('btn-register').addEventListener('click', () => {
-  const username = usernameInput.value.trim();
-  const password = passwordInput.value;
-  if (!username || !password) { loginError.textContent = 'Preencha todos os campos.'; return; }
-  if (username.length < 3) { loginError.textContent = 'Nome de usuário deve ter pelo menos 3 caracteres.'; return; }
-  if (password.length < 4) { loginError.textContent = 'Senha deve ter pelo menos 4 caracteres.'; return; }
-  loginError.textContent = '';
+  const username = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const passwordConfirm = document.getElementById('reg-password-confirm').value;
+  if (!username || !password) { registerError.textContent = 'Preencha todos os campos.'; return; }
+  if (username.length < 3) { registerError.textContent = 'Usuário deve ter pelo menos 3 caracteres.'; return; }
+  if (password.length < 4) { registerError.textContent = 'Senha deve ter pelo menos 4 caracteres.'; return; }
+  if (password !== passwordConfirm) { registerError.textContent = 'As senhas não coincidem.'; return; }
+  registerError.textContent = '';
   showCharCreation(username, password);
 });
 
-// Enter key to login
+// Enter key support
 passwordInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-login').click();
 });
 usernameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') passwordInput.focus();
+});
+document.getElementById('reg-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('reg-password-confirm').focus();
+});
+document.getElementById('reg-password-confirm').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-register').click();
 });
 
 function startGame() {
@@ -2198,7 +2222,10 @@ function showCharCreation(username, password) {
 
 function hideCharCreation() {
   document.getElementById('char-creation-screen').style.display = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
+  loginScreen.style.display = 'flex';
+  // Return to register panel (user came from there)
+  document.getElementById('login-panel').style.display = 'none';
+  document.getElementById('register-panel').style.display = 'block';
 }
 
 function selectHairstyle(style) {
@@ -2281,15 +2308,17 @@ async function confirmCharCreation() {
       btn.textContent = 'Entrar no Mundo ⚔️';
       setTimeout(() => {
         hideCharCreation();
-        loginError.style.color = '#ff4444';
-        loginError.textContent = res.error;
+        if (registerError) {
+          registerError.textContent = res.error;
+        }
       }, 1500);
     } else {
       socket.emit('login', { username, password }, (res2) => {
         document.getElementById('char-creation-screen').style.display = 'none';
         if (res2.error) {
-          document.getElementById('login-screen').style.display = 'flex';
-          loginError.style.color = '#ff4444';
+          loginScreen.style.display = 'flex';
+          document.getElementById('login-panel').style.display = 'block';
+          document.getElementById('register-panel').style.display = 'none';
           loginError.textContent = res2.error;
         } else {
           lastLoginCredentials = { username, password };
@@ -4013,6 +4042,7 @@ function updateStatusUI() {
     }
   }
 
+  drawStatusPortrait();
   updateSkillsUI();
 }
 
@@ -4028,6 +4058,63 @@ function updateSkillsUI() {
   document.querySelectorAll('.btn-skill').forEach(btn => {
     btn.disabled = !myChar.skill_points || myChar.skill_points <= 0;
   });
+}
+
+function drawStatusPortrait() {
+  const canvas = document.getElementById('portrait-canvas');
+  if (!canvas || !myChar) return;
+  const pCtx = canvas.getContext('2d');
+  const W = canvas.width;  // 72
+  const H = canvas.height; // 72
+  pCtx.clearRect(0, 0, W, H);
+  pCtx.fillStyle = '#080503';
+  pCtx.fillRect(0, 0, W, H);
+
+  // Usa a mesma geometria do drawMyPlayer, ampliado para mostrar só a cabeça
+  const PAD = 6;
+  const S = Math.round((H - PAD * 2) / 0.38); // ≈ 158px — cabeça ocupa ~38% do sprite
+  const sx = W / 2;                             // centro horizontal
+  const sy = PAD + S * 0.75;                   // topo do sprite fica em PAD
+
+  if (myChar.isAdmin) {
+    const spr = sprites['admin'];
+    if (spr && spr.complete && spr.naturalWidth > 0)
+      pCtx.drawImage(spr, sx - S / 2, sy - S * 0.75, S, S);
+    return;
+  }
+
+  // 1. Corpo base (mesmo offset que drawMyPlayer)
+  const spr = sprites['parado'];
+  if (spr && spr.complete && spr.naturalWidth > 0) {
+    pCtx.drawImage(spr, sx - S / 2, sy - S * 0.75, S, S);
+  }
+
+  // 2. Cabelo — offset idêntico ao drawMyPlayer: hairY = sy - S*0.75 - S*0.05
+  if (myChar.hairstyle && myChar.hairstyle !== 'nenhum' && !myChar.equipped_helmet) {
+    const hairImg = getTintedHair(myChar.hairstyle, myChar.hair_color || 'castanho');
+    if (hairImg) {
+      const hairY = sy - S * 0.75 - S * 0.05;
+      pCtx.drawImage(hairImg, sx - S / 2, hairY, S, S * 1.05);
+    }
+  }
+
+  // 3. Peitoral (ombros/pescoço aparecem na base da cabeça)
+  if (myChar.equipped_chest && CHEST_SPRITES && CHEST_SPRITES[myChar.equipped_chest]) {
+    const s = sprites[CHEST_SPRITES[myChar.equipped_chest][0]];
+    if (s && s.complete && s.naturalWidth > 0)
+      pCtx.drawImage(s, sx - S / 2, sy - S * 0.75, S, S);
+  }
+
+  // 4. Elmo
+  if (myChar.equipped_helmet && HELMET_SPRITES && HELMET_SPRITES[myChar.equipped_helmet]) {
+    const s = sprites[HELMET_SPRITES[myChar.equipped_helmet][0]];
+    if (s && s.complete && s.naturalWidth > 0) {
+      const isTall = TALL_HELMET_IDS && TALL_HELMET_IDS.has(myChar.equipped_helmet);
+      const drawY = isTall ? sy - S * 0.75 - S * 0.05 : sy - S * 0.75;
+      const drawH = isTall ? S * 1.05 : S;
+      pCtx.drawImage(s, sx - S / 2, drawY, S, drawH);
+    }
+  }
 }
 
 function updateInventoryUI() {
@@ -4050,14 +4137,14 @@ function updateInventoryUI() {
   }
   const visibleItems = myInventory.filter(item => !usedRowIds.has(item.id));
 
-  // Build slot map: slot_order (0-19) -> item (allows real gaps)
+  // Build slot map: slot_order -> item (allows real gaps)
   const slotMap = {};
   for (const item of visibleItems) {
     const pos = typeof item.slot_order === 'number' ? item.slot_order : 99;
-    if (pos >= 0 && pos < 30) slotMap[pos] = item;
+    if (pos >= 0 && pos < 40) slotMap[pos] = item;
   }
 
-  const totalSlots = 30;
+  const totalSlots = 40;
   for (let i = 0; i < totalSlots; i++) {
     const item = slotMap[i] || null;
     const slot = document.createElement('div');

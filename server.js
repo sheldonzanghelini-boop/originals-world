@@ -2449,9 +2449,9 @@ io.on('connection', (socket) => {
     const now = Date.now();
     if (now - (p.lastStaffCastTime || 0) < 3000) return; // cooldown 3s
     const dist = Math.sqrt((p.x - tx)**2 + (p.y - ty)**2);
-    if (dist > 3) return; // fora do alcance (3 tiles)
+    if (dist > 4) return; // fora do alcance (4 tiles)
     p.lastStaffCastTime = now;
-    const dmg = Math.round(getPlayerDamage(p) * 2.5);
+    const dmg = Math.round(getPlayerDamage(p) * 3.5);
     staffSpells.push({
       id: ++staffSpellIdCounter,
       x: tx, y: ty,
@@ -3482,19 +3482,69 @@ setInterval(() => {
       spell.phase = 'active';
       if (!spell.damaged) {
         spell.damaged = true;
+        const caster = players[spell.casterSocket];
         // Dano nos inimigos dentro do raio
         for (const enemy of enemies) {
           if (enemy.quadrant !== spell.quadrant || enemy.dead) continue;
           const d = Math.sqrt((enemy.x - spell.x)**2 + (enemy.y - spell.y)**2);
           if (d < 1.2) {
             enemy.hp -= spell.damage;
-            const casterSocket = Object.values(players).find(pl => pl.socket && pl.socket.id === spell.casterSocket);
-            if (casterSocket) {
-              casterSocket.socket.emit('damageDealt', { targetId: enemy.id, damage: spell.damage, remainingHp: enemy.hp });
+            if (caster) {
+              caster.socket.emit('damageDealt', { targetId: enemy.id, damage: spell.damage, remainingHp: enemy.hp });
+              caster.lastCombatTime = now;
             }
             if (enemy.hp <= 0) {
               enemy.dead = true;
               enemy.deathTime = now;
+              if (!caster) continue;
+              // Boss special death
+              if (enemy.type === 'bossskeleton') {
+                enemy.lootReady = true;
+                enemy.animState = 'boss7';
+                bossSpells.length = 0;
+                const xpGain = 500;
+                grantXP(caster, xpGain);
+                caster.socket.emit('loot', { enemyId: enemy.id, loot: ['Pressione F para coletar o loot!'], silver: caster.silver, xpGain, x: enemy.x, y: enemy.y });
+                io.emit('chat', { sender: 'Sistema', message: `O Boss Esqueleto foi derrotado por ${caster.username}!`, color: '#ffd700' });
+                saveCharacter(caster);
+                continue;
+              }
+              // Loot normal
+              let loot = [];
+              if (enemy.type === 'zombie') {
+                const silverDrop = 3 + Math.floor(Math.random() * 5);
+                caster.silver += silverDrop;
+                loot.push(`${silverDrop} Pratas`);
+              } else if (enemy.type !== 'cow') {
+                caster.silver += 1;
+                loot.push('1 Prata');
+              }
+              // Drop espada
+              const dropChance = Math.min(0.25, 0.05 + (caster.luck * 0.005));
+              if (enemy.type === 'skeleton' && Math.random() < dropChance) {
+                spawnGroundItem('espada_enferrujada', 1, enemy.x + (Math.random() - 0.5) * 0.5, enemy.y + (Math.random() - 0.5) * 0.5, caster.quadrant);
+                loot.push('Espada Enferrujada');
+                caster.socket.emit('chat', { sender: 'Sistema', message: '⚔️ Uma Espada Enferrujada caiu no chão!', color: '#ff0' });
+              }
+              // Cow drops couro
+              if (enemy.type === 'cow') {
+                const couroQty = Math.floor(Math.random() * 3);
+                if (couroQty > 0) {
+                  for (let ci = 0; ci < couroQty; ci++) {
+                    spawnGroundItem('couro_cru', 1, enemy.x + (Math.random() - 0.5) * 0.8, enemy.y + (Math.random() - 0.5) * 0.8, caster.quadrant);
+                  }
+                  loot.push(`${couroQty}x Couro Cru`);
+                  caster.socket.emit('chat', { sender: 'Sistema', message: `🐄 ${couroQty}x Couro Cru caiu no chão!`, color: '#c8a060' });
+                }
+              }
+              // XP
+              const xpGain = enemy.type === 'skeleton' ? 15 : (enemy.type === 'zombie' ? 12 : (enemy.type === 'cow' ? 5 : 5));
+              grantXP(caster, xpGain);
+              caster.socket.emit('loot', { enemyId: enemy.id, loot, silver: caster.silver, xpGain, x: enemy.x, y: enemy.y });
+              updateQuestProgress(caster, enemy.type);
+              const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(caster.charId);
+              caster.socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
+              sendFullState(caster);
             }
           }
         }

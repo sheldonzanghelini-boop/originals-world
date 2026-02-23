@@ -2543,6 +2543,16 @@ canvas.addEventListener('click', (e) => {
     if (d < tolerance && d < closestDist) { closestDist = d; clickedEnemy = enemy; }
   }
   if (clickedEnemy) {
+    // Cajado de Ossos: conjura magia na posição do inimigo em vez de auto-ataque
+    if (myChar.equipped_weapon === 'cajado_ossos') {
+      const now = Date.now();
+      const dist = Math.sqrt((myChar.x - clickedEnemy.x)**2 + (myChar.y - clickedEnemy.y)**2);
+      if (dist <= 4 && now - lastStaffCastTime >= 3000) {
+        lastStaffCastTime = now;
+        socket.emit('staffMagic', { tx: clickedEnemy.x, ty: clickedEnemy.y });
+      }
+      return;
+    }
     targetEnemy = clickedEnemy;
     // Attack immediately on click
     const now = Date.now();
@@ -2574,7 +2584,7 @@ canvas.addEventListener('click', (e) => {
   if (myChar.equipped_weapon === 'cajado_ossos') {
     const now = Date.now();
     const distToTile = Math.sqrt((myChar.x - wx)**2 + (myChar.y - wy)**2);
-    if (distToTile <= 3) {
+    if (distToTile <= 4) {
       if (now - lastStaffCastTime >= 3000) {
         lastStaffCastTime = now;
         socket.emit('staffMagic', { tx: wx, ty: wy });
@@ -2786,8 +2796,8 @@ function update(dt) {
   waterTimer += dt;
   if (waterTimer > 500) { waterTimer = 0; waterAnimFrame = (waterAnimFrame + 1) % 3; }
 
-  // Auto-attack target
-  if (targetEnemy && myChar.hp > 0) {
+  // Auto-attack target (cajado não faz auto-ataque)
+  if (targetEnemy && myChar.hp > 0 && myChar.equipped_weapon !== 'cajado_ossos') {
     const enemy = nearbyEnemies.find(e => e.id === targetEnemy.id);
     if (enemy) {
       targetEnemy = enemy; // update position

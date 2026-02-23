@@ -234,9 +234,9 @@ try { db.exec("ALTER TABLE characters ADD COLUMN can_change_hair INTEGER DEFAULT
   const char = db.prepare('SELECT id FROM characters WHERE account_id = ?').get(acc.id);
   if (char) db.prepare('UPDATE characters SET can_change_hair = 1 WHERE id = ? AND can_change_hair = 0').run(char.id);
 })();
-// Normalize slot_order to actual slot positions 0-29 per character (runs once if any value > 29)
+// Normalize slot_order to actual slot positions 0-39 per character (runs once if any value > 39)
 (function normalizeSlotOrder() {
-  const needsNorm = db.prepare('SELECT COUNT(*) as c FROM inventory WHERE slot_order > 29').get();
+  const needsNorm = db.prepare('SELECT COUNT(*) as c FROM inventory WHERE slot_order > 39').get();
   if (needsNorm.c > 0) {
     const chars = db.prepare('SELECT DISTINCT character_id FROM inventory').all();
     for (const c of chars) {
@@ -2934,7 +2934,7 @@ function getNextSlotOrder(charId) {
   const used = new Set(
     db.prepare('SELECT slot_order FROM inventory WHERE character_id = ?').all(charId).map(r => r.slot_order)
   );
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 40; i++) {
     if (!used.has(i)) return i;
   }
   return used.size; // inventário cheio, fallback

@@ -374,9 +374,133 @@ body {
   100% { opacity: 0; transform: translateY(-50px); }
 }
 
+/* ============= CRITICAL HIT ============= */
+.dmg-number.crit {
+  font-size: 28px;
+  font-weight: 900;
+  color: #ffd700;
+  text-shadow: 0 0 8px #ff8800, 2px 2px 0 #000;
+  animation: critFloat 1.5s ease-out forwards;
+  z-index: 20;
+}
+
+@keyframes critFloat {
+  0%   { opacity: 1; transform: translateY(0) scale(1.5); }
+  15%  { opacity: 1; transform: translateY(-10px) scale(1.8); }
+  50%  { opacity: 1; transform: translateY(-30px) scale(1.3); }
+  100% { opacity: 0; transform: translateY(-55px) scale(1); }
+}
+
+/* ============= REGEN PULSE ============= */
+.hp-bar.regen-pulse {
+  animation: regenPulse 0.5s ease-out;
+}
+@keyframes regenPulse {
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(2) drop-shadow(0 0 4px #00ff88); }
+  100% { filter: brightness(1); }
+}
+
+/* Level up aura is rendered on canvas (see drawLevelUpAura in game.js) */
+
+/* ============= HOTBAR ============= */
+#hotbar {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 15;
+}
+.hotbar-slot {
+  width: 48px;
+  height: 48px;
+  background: rgba(10,8,5,0.85);
+  border: 2px solid #4a3520;
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.hotbar-slot.has-item {
+  border-color: #7a5a30;
+}
+.hotbar-slot-key {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  color: #8a7a60;
+  font-weight: bold;
+  line-height: 1;
+}
+.hotbar-slot-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.hotbar-slot-qty {
+  font-size: 9px;
+  color: #d4a750;
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  line-height: 1;
+}
+.hotbar-slot-name {
+  font-size: 7px;
+  color: #b8a88a;
+  text-align: center;
+  max-width: 44px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hotbar-cooldown {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  color: #fff;
+  border-radius: 4px;
+}
+.hotbar-cooldown.hidden { display: none; }
+
+/* ============= ATTACK COOLDOWN BAR ============= */
+#attack-cd-wrap {
+  position: absolute;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 4px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 2px;
+  overflow: hidden;
+  z-index: 15;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#attack-cd-wrap.active { opacity: 1; }
+#attack-cd-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #d44, #ff8);
+  border-radius: 2px;
+  transition: width 0.05s linear;
+}
+
 /* ============= SIDE PANEL ============= */
 #side-panel {
-  width: 260px;
+  width: 330px;
   background: linear-gradient(180deg, #1e1208, #0f0a05);
   border-left: 2px solid #4a3520;
   display: flex;
@@ -407,13 +531,15 @@ body {
 
 .tab-content { display: none; padding: 10px; flex: 1; overflow-y: auto; }
 .tab-content.active { display: block; }
+/* Personagem tab manages its own internal padding */
+.tab-personagem { padding: 0; }
 
 .panel-section {
   background: rgba(0,0,0,0.3);
   border: 1px solid #3a2515;
   border-radius: 6px;
   padding: 10px;
-  margin-bottom: 10px;
+  margin: 0 10px 10px;
 }
 
 .panel-section h3 {
@@ -442,7 +568,7 @@ body {
   border: 1px solid #5a3a20;
   border-radius: 8px;
   padding: 10px;
-  margin-bottom: 10px;
+  margin: 10px 10px 10px;
   position: relative;
   overflow: hidden;
 }
@@ -523,6 +649,7 @@ body {
   flex-direction: column;
   gap: 5px;
   margin-bottom: 10px;
+  padding: 0 10px;
 }
 
 .vital-row {
@@ -653,14 +780,7 @@ body {
   text-align: right;
 }
 
-/* Equipment Slots */
-.equip-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  margin-bottom: 6px;
-}
-
+/* ============= EQUIPMENT — BASE BOX ============= */
 .equip-box {
   aspect-ratio: 1;
   background: rgba(5,3,1,0.8);
@@ -672,21 +792,15 @@ body {
   justify-content: center;
   cursor: pointer;
   position: relative;
-  min-height: 48px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-
 .equip-box:hover {
   border-color: #7a5a30;
   box-shadow: 0 0 6px rgba(212,167,80,0.2);
 }
-
 .equip-box.has-item {
-  border-color: #5a8a3a;
-  background: rgba(10,15,5,0.8);
-  box-shadow: 0 0 4px rgba(90,138,58,0.3);
+  background: rgba(10,12,8,0.85);
 }
-
 .equip-box-label {
   font-size: 8px;
   color: #5a4a30;
@@ -694,7 +808,6 @@ body {
   pointer-events: none;
   line-height: 1.3;
 }
-
 .equip-box-item {
   font-size: 10px;
   color: #e0d5c0;
@@ -707,7 +820,6 @@ body {
   white-space: nowrap;
   padding: 0 2px;
 }
-
 .equip-box-icon {
   width: 36px;
   height: 36px;
@@ -716,7 +828,6 @@ body {
   pointer-events: none;
   margin-top: 2px;
 }
-
 .equip-box .equip-unequip-btn {
   position: absolute;
   top: 1px;
@@ -734,14 +845,83 @@ body {
   padding: 0;
   display: none;
 }
-
 .equip-box.has-item .equip-unequip-btn { display: block; }
 
-/* ============= INVENTORY TAB ============= */
+/* ============= INVENTORY TAB — BODY SILHOUETTE ============= */
+.equip-body-section {
+  padding: 10px 10px 4px;
+}
+.equip-body-label {
+  font-size: 10px;
+  font-weight: bold;
+  color: #6a5a38;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.equip-body-label::before,
+.equip-body-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(107,76,42,0.35);
+}
+
+.equip-body-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: repeat(4, 1fr);
+  gap: 5px;
+}
+
+/* Body boxes — slightly bigger than the old status tab boxes */
+.equip-body-box {
+  min-height: 56px;
+}
+.equip-body-box .equip-box-icon {
+  width: 38px;
+  height: 38px;
+}
+
+/* Empty spacers for silhouette shape */
+.equip-body-empty {
+  aspect-ratio: 1;
+  min-height: 56px;
+  background: rgba(5,3,1,0.3);
+  border: 1px dashed rgba(58,37,21,0.4);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Divider between equipment and bag */
+.equip-inv-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  font-size: 10px;
+  font-weight: bold;
+  color: #6a5a38;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.equip-inv-divider::before,
+.equip-inv-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(107,76,42,0.35);
+}
+
+/* ============= INVENTORY GRID ============= */
 #inventory-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
+  padding: 0 10px 10px;
 }
 
 .inv-slot {
@@ -902,6 +1082,302 @@ body {
 .btn-skill:active { transform: translateY(0); }
 .btn-skill:disabled { opacity: 0.25; cursor: default; transform: none; }
 
+/* ============= BOSS LOOT PANEL ============= */
+
+/* Backdrop */
+.boss-loot-backdrop {
+  position: fixed;
+  inset: 0;
+  right: 330px;
+  background: rgba(0,0,0,0.65);
+  z-index: 7998;
+  animation: blBackdropIn 0.18s ease-out;
+}
+@keyframes blBackdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Panel — mesmo estilo do auth-box do login */
+.boss-loot-panel {
+  position: fixed;
+  top: 50%;
+  left: calc(50% - 165px);
+  transform: translate(-50%, -50%);
+  z-index: 7999;
+  width: 400px;
+  background: linear-gradient(168deg, rgba(20,10,2,0.98) 0%, rgba(9,4,1,0.99) 100%);
+  border: 1px solid rgba(107,76,42,0.48);
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.9),
+    0 0 55px rgba(100,58,8,0.22),
+    0 0 110px rgba(90,50,5,0.1),
+    inset 0 0 70px rgba(0,0,0,0.55),
+    inset 0 1px 0 rgba(212,167,80,0.07);
+  font-family: 'Segoe UI', 'Georgia', serif;
+  color: #e0d5c0;
+  animation: blPanelIn 0.28s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+@keyframes blPanelIn {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.93); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Corner ornaments — idênticos ao login */
+.boss-loot-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: rgba(212,167,80,0.4);
+  border-style: solid;
+  pointer-events: none;
+  z-index: 1;
+}
+.boss-loot-corner.tl { top: 6px;    left: 6px;   border-width: 1px 0 0 1px; }
+.boss-loot-corner.tr { top: 6px;    right: 6px;  border-width: 1px 1px 0 0; }
+.boss-loot-corner.bl { bottom: 6px; left: 6px;   border-width: 0 0 1px 1px; }
+.boss-loot-corner.br { bottom: 6px; right: 6px;  border-width: 0 1px 1px 0; }
+
+/* Header — centralizado como auth-title */
+.boss-loot-header {
+  padding: 24px 44px 16px;
+  text-align: center;
+  border-bottom: 1px solid rgba(107,76,42,0.3);
+  position: relative;
+}
+
+.boss-loot-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: 1px solid rgba(80,55,22,0.5);
+  color: #5a4030;
+  font-size: 11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  line-height: 1;
+}
+.boss-loot-close-btn:hover {
+  border-color: rgba(212,167,80,0.55);
+  color: #d4a750;
+  background: rgba(212,167,80,0.06);
+}
+
+.boss-loot-skull {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 10px rgba(212,167,80,0.55));
+}
+
+.boss-loot-title {
+  font-family: 'Cinzel', Georgia, serif;
+  color: #d4a750;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-shadow: 0 0 12px rgba(212,167,80,0.35);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.boss-loot-subtitle {
+  font-size: 9px;
+  color: #614e30;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  display: block;
+}
+
+/* Divisor dourado — igual ao login */
+.boss-loot-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  margin: 12px 0 0;
+}
+.boss-loot-divider::before,
+.boss-loot-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212,167,80,0.28), transparent);
+}
+.boss-loot-divider-gem {
+  color: rgba(212,167,80,0.45);
+  font-size: 7px;
+}
+
+/* Items container */
+.boss-loot-grid {
+  padding: 14px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Item */
+.boss-loot-item {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: rgba(0,0,0,0.38);
+  border: 1px solid rgba(80,55,22,0.45);
+  border-radius: 2px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.2s, border-color 0.2s;
+}
+.boss-loot-item:hover {
+  background: rgba(18,10,2,0.85);
+  border-color: rgba(212,167,80,0.38);
+}
+.boss-loot-item:active { opacity: 0.8; }
+
+/* Rarity bar */
+.boss-loot-item-bar {
+  width: 3px;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+/* Icon area */
+.boss-loot-item-icon-wrap {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.45);
+  border-right: 1px solid rgba(80,55,22,0.3);
+}
+.boss-loot-item-icon {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* Text block */
+.boss-loot-item-text {
+  flex: 1;
+  padding: 8px 12px;
+  min-width: 0;
+}
+.boss-loot-item-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.boss-loot-item-rarity {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  opacity: 0.65;
+  margin-bottom: 2px;
+}
+.boss-loot-item-desc {
+  font-size: 10px;
+  color: #5a4a35;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Arrow */
+.boss-loot-item-action {
+  padding: 0 14px 0 6px;
+  font-size: 18px;
+  opacity: 0.15;
+  flex-shrink: 0;
+  color: #d4a750;
+  transition: opacity 0.2s;
+}
+.boss-loot-item:hover .boss-loot-item-action { opacity: 0.6; }
+
+/* Silver row */
+.boss-loot-silver-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0 20px 18px;
+  border: 1px solid rgba(107,76,42,0.42);
+  border-radius: 2px;
+  cursor: pointer;
+  overflow: hidden;
+  background: rgba(0,0,0,0.35);
+  transition: background 0.2s, border-color 0.2s;
+}
+.boss-loot-silver-row:hover {
+  background: rgba(18,12,2,0.85);
+  border-color: rgba(212,167,80,0.38);
+}
+
+.boss-loot-silver-bar {
+  width: 3px;
+  align-self: stretch;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #d4a750, #7a5010);
+}
+
+.boss-loot-silver-icon-wrap {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.4);
+  border-right: 1px solid rgba(107,76,42,0.3);
+  font-size: 24px;
+}
+
+.boss-loot-silver-info {
+  flex: 1;
+  padding: 8px 12px;
+}
+.boss-loot-silver-label {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #614e30;
+  margin-bottom: 4px;
+}
+.boss-loot-silver-amt {
+  font-size: 16px;
+  font-weight: 700;
+  color: #d4a750;
+  text-shadow: 0 0 10px rgba(212,167,80,0.28);
+  font-family: 'Cinzel', Georgia, serif;
+}
+
+.boss-loot-silver-action {
+  padding: 0 14px 0 6px;
+  font-size: 18px;
+  opacity: 0.18;
+  flex-shrink: 0;
+  color: #d4a750;
+  transition: opacity 0.2s;
+}
+.boss-loot-silver-row:hover .boss-loot-silver-action { opacity: 0.65; }
+
 /* ============= CHAT ============= */
 #chat-panel {
   height: 150px;
@@ -909,6 +1385,44 @@ body {
   border-top: 2px solid #4a3520;
   display: flex;
   flex-direction: column;
+  transition: height 0.25s ease;
+}
+#chat-panel.minimized {
+  height: 30px;
+}
+#chat-panel.minimized #chat-messages,
+#chat-panel.minimized #chat-input-row {
+  display: none;
+}
+
+#chat-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  height: 30px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #3a2515;
+}
+#chat-topbar-label {
+  font-size: 11px;
+  color: #6a5a40;
+  letter-spacing: 1px;
+}
+#btn-chat-toggle {
+  background: none;
+  border: none;
+  color: #6a5a40;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: color 0.2s, background 0.2s;
+  line-height: 1;
+}
+#btn-chat-toggle:hover {
+  color: #d4a750;
+  background: rgba(212,167,80,0.08);
 }
 
 #chat-messages {
@@ -953,75 +1467,111 @@ body {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.72);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  backdrop-filter: blur(2px);
 }
 
 #npc-dialog-box {
-  background: linear-gradient(180deg, #2a1a0a, #1a0e05);
-  border: 2px solid #6b4c2a;
+  position: relative;
+  background: linear-gradient(168deg, rgba(22,12,3,0.99) 0%, rgba(10,5,1,0.99) 100%);
+  border: 1px solid rgba(107,76,42,0.55);
   border-radius: 10px;
-  padding: 25px 30px;
-  max-width: 450px;
-  min-width: 350px;
-  box-shadow: 0 0 30px rgba(0,0,0,0.8);
+  max-width: 480px;
+  min-width: 340px;
+  width: 90vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 0 50px rgba(0,0,0,0.95), inset 0 1px 0 rgba(212,167,80,0.08);
 }
 
-#npc-dialog-box h3 {
-  color: #d4a750;
-  font-size: 20px;
-  margin-bottom: 12px;
+.npc-dialog-head {
+  padding: 22px 30px 0;
   text-align: center;
+  flex-shrink: 0;
+}
+
+#npc-dialog-name {
+  color: #d4a750;
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  letter-spacing: 1px;
+  text-shadow: 0 0 14px rgba(212,167,80,0.35);
+}
+
+.npc-head-divider {
+  color: rgba(212,167,80,0.45);
+  font-size: 10px;
+  letter-spacing: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(107,76,42,0.35);
 }
 
 #npc-dialog-text {
-  color: #e0d5c0;
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 20px;
+  color: #c8bda8;
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 12px 26px 6px;
+  margin: 0;
   text-align: center;
+  flex-shrink: 0;
 }
 
-#npc-dialog-buttons {
+#npc-dialog-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 18px 10px;
+  min-height: 0;
+}
+
+#npc-dialog-footer {
+  padding: 10px 20px 16px;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(107,76,42,0.28);
 }
 
-#npc-dialog-buttons button {
-  padding: 10px 20px;
+/* Dialog buttons */
+.dialog-btn-accept, .dialog-btn-close, .dialog-btn-complete {
+  padding: 9px 22px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
   cursor: pointer;
   border: none;
-  transition: all 0.2s;
+  transition: all 0.18s;
+  letter-spacing: 0.4px;
 }
 
 .dialog-btn-accept {
-  background: linear-gradient(180deg, #44cc44, #228822);
+  background: linear-gradient(180deg, #4dcc4d, #267a26);
   color: #fff;
+  box-shadow: 0 2px 8px rgba(40,160,40,0.2);
 }
-
-.dialog-btn-accept:hover { background: linear-gradient(180deg, #55dd55, #339933); }
+.dialog-btn-accept:hover { background: linear-gradient(180deg, #5ddd5d, #308830); }
 
 .dialog-btn-close {
-  background: linear-gradient(180deg, #4a3520, #2a1a0a);
-  color: #b8a88a;
-  border: 1px solid #6b4c2a !important;
+  background: linear-gradient(180deg, #3a2818, #1e1008);
+  color: #a89878;
+  border: 1px solid rgba(107,76,42,0.5) !important;
 }
-
-.dialog-btn-close:hover { background: linear-gradient(180deg, #5a4530, #3a2a1a); }
+.dialog-btn-close:hover { background: linear-gradient(180deg, #4a3828, #2a1a0e); color: #c8a870; }
 
 .dialog-btn-complete {
-  background: linear-gradient(180deg, #d4a750, #a67c30);
-  color: #1a0e05;
+  background: linear-gradient(180deg, #d4a750, #9a6e28);
+  color: #1c0e02;
+  box-shadow: 0 2px 8px rgba(180,130,40,0.2);
 }
-
-.dialog-btn-complete:hover { background: linear-gradient(180deg, #e0b860, #b88d40); }
+.dialog-btn-complete:hover { background: linear-gradient(180deg, #e0b860, #a87a30); }
 
 /* ============= DEATH SCREEN ============= */
 #death-screen {
@@ -1240,42 +1790,110 @@ body {
   background: rgba(68, 204, 68, 0.1);
 }
 
-/* ============= CRAFTING RECIPES ============= */
-.craft-recipes {
-  width: 100%;
-  margin-top: 8px;
+/* ============= CRAFTING / SHOP ============= */
+.craft-section-title {
+  color: #a88040;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin: 8px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.craft-section-title::before,
+.craft-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(107,76,42,0.4);
+}
+
+.craft-silver-info {
+  background: rgba(245,197,24,0.07);
+  border: 1px solid rgba(245,197,24,0.18);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #998855;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.craft-silver-info strong { color: #f5c518; font-size: 13px; }
 
 .craft-recipe-item {
-  background: rgba(107, 76, 42, 0.2);
-  border: 1px solid #4a3520;
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  background: rgba(107,76,42,0.12);
+  border: 1px solid rgba(107,76,42,0.3);
+  border-radius: 8px;
+  padding: 9px 10px;
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: border-color 0.18s, background 0.18s;
+}
+.craft-recipe-item:hover {
+  border-color: rgba(212,167,80,0.35);
+  background: rgba(107,76,42,0.22);
 }
 
+.craft-item-icon {
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.craft-item-icon-placeholder {
+  width: 36px;
+  height: 36px;
+  background: rgba(107,76,42,0.25);
+  border: 1px solid rgba(107,76,42,0.4);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.craft-item-info {
+  flex: 1;
+  min-width: 0;
+}
 .craft-recipe-name {
   color: #d4a750;
   font-weight: bold;
-  font-size: 13px;
+  font-size: 12px;
   margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.craft-recipe-desc {
+  color: #887a60;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
-.craft-recipe-desc {
-  color: #b8a88a;
-  font-size: 11px;
-  margin-bottom: 6px;
-}
+.craft-item-action { flex-shrink: 0; }
 
 .craft-btn {
-  padding: 6px 16px;
-  font-size: 12px;
-  width: 100%;
+  padding: 6px 13px;
+  font-size: 11px;
+  font-weight: bold;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+  min-width: 74px;
 }
-
 .craft-btn.disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
+  background: linear-gradient(180deg, #3a2818, #1e1008) !important;
+  color: #665544 !important;
+  box-shadow: none !important;
 }
 
 /* ============= CHARACTER CREATION ============= */

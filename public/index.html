@@ -169,18 +169,19 @@
         <canvas id="gameCanvas"></canvas>
         <div id="quest-tracker"></div>
         <div id="damage-numbers"></div>
+        <div id="attack-cd-wrap"><div id="attack-cd-bar"></div></div>
+        <div id="hotbar"></div>
       </div>
 
       <!-- RIGHT: Side Panel -->
       <div id="side-panel">
         <div id="panel-tabs">
-          <button class="tab-btn active" data-tab="status">Status</button>
-          <button class="tab-btn" data-tab="inventory">Inventário</button>
+          <button class="tab-btn active" data-tab="personagem">Personagem</button>
           <button class="tab-btn" data-tab="skills">Skills</button>
         </div>
 
-        <!-- STATUS TAB -->
-        <div id="tab-status" class="tab-content active">
+        <!-- PERSONAGEM TAB (status + inventory merged) -->
+        <div id="tab-personagem" class="tab-content active tab-personagem">
           <!-- Hero Card: Portrait + Name/Level/Silver -->
           <div class="hero-card">
             <canvas id="portrait-canvas" width="72" height="72"></canvas>
@@ -210,75 +211,47 @@
               </div>
             </div>
           </div>
-          <!-- Attributes -->
-          <div class="panel-section">
-            <h4>Atributos</h4>
-            <div class="attr-grid">
-              <div class="attr-item">
-                <span class="attr-icon">❤️</span>
-                <span class="attr-label">Vida Máx.</span>
-                <span class="attr-val" id="stat-hp-max">25</span>
-              </div>
-              <div class="attr-item">
-                <span class="attr-icon">⚔️</span>
-                <span class="attr-label">Força</span>
-                <span class="attr-val" id="stat-str">0</span>
-              </div>
-              <div class="attr-item">
-                <span class="attr-icon">🧠</span>
-                <span class="attr-label">Intel.</span>
-                <span class="attr-val" id="stat-int">0</span>
-              </div>
-              <div class="attr-item">
-                <span class="attr-icon">🛡️</span>
-                <span class="attr-label">Defesa</span>
-                <span class="attr-val" id="stat-def">0</span>
-              </div>
-              <div class="attr-item">
-                <span class="attr-icon">🍀</span>
-                <span class="attr-label">Sorte</span>
-                <span class="attr-val" id="stat-luck">0</span>
-              </div>
-            </div>
-          </div>
-          <!-- Equipment -->
-          <div class="panel-section">
-            <h4>Equipamento</h4>
-            <div class="equip-grid">
-              <div class="equip-box" id="equip-helmet" data-slot="helmet">
+          <!-- Equipment body silhouette -->
+          <div class="equip-body-section">
+            <div class="equip-body-label">Equipamento</div>
+            <div class="equip-body-grid">
+              <!-- Row 1: only helmet (center) -->
+              <div class="equip-body-empty"></div>
+              <div class="equip-box equip-body-box" id="equip-helmet" data-slot="helmet">
                 <span class="equip-box-label">Elmo</span>
               </div>
-              <div class="equip-box" id="equip-chest" data-slot="chest">
-                <span class="equip-box-label">Peitoral</span>
-              </div>
-              <div class="equip-box" id="equip-legs" data-slot="legs">
-                <span class="equip-box-label">Calça</span>
-              </div>
-              <div class="equip-box" id="equip-boots" data-slot="boots">
-                <span class="equip-box-label">Botas</span>
-              </div>
-              <div class="equip-box" id="equip-weapon" data-slot="weapon">
+              <div class="equip-body-empty"></div>
+              <!-- Row 2: weapon | chest | weapon2 -->
+              <div class="equip-box equip-body-box" id="equip-weapon" data-slot="weapon">
                 <span class="equip-box-label">Mão 1</span>
               </div>
-              <div class="equip-box" id="equip-weapon2" data-slot="weapon2">
+              <div class="equip-box equip-body-box" id="equip-chest" data-slot="chest">
+                <span class="equip-box-label">Peitoral</span>
+              </div>
+              <div class="equip-box equip-body-box" id="equip-weapon2" data-slot="weapon2">
                 <span class="equip-box-label">Mão 2</span>
               </div>
-              <div class="equip-box" id="equip-ring1" data-slot="ring1">
+              <!-- Row 3: ring1 | legs | ring2 -->
+              <div class="equip-box equip-body-box" id="equip-ring1" data-slot="ring1">
                 <span class="equip-box-label">Anel 1</span>
               </div>
-              <div class="equip-box" id="equip-ring2" data-slot="ring2">
+              <div class="equip-box equip-body-box" id="equip-legs" data-slot="legs">
+                <span class="equip-box-label">Calça</span>
+              </div>
+              <div class="equip-box equip-body-box" id="equip-ring2" data-slot="ring2">
                 <span class="equip-box-label">Anel 2</span>
               </div>
+              <!-- Row 4: only boots (center) -->
+              <div class="equip-body-empty"></div>
+              <div class="equip-box equip-body-box" id="equip-boots" data-slot="boots">
+                <span class="equip-box-label">Botas</span>
+              </div>
+              <div class="equip-body-empty"></div>
             </div>
           </div>
-        </div>
-
-        <!-- INVENTORY TAB -->
-        <div id="tab-inventory" class="tab-content">
-          <div class="panel-section">
-            <h4>Inventário</h4>
-            <div id="inventory-grid"></div>
-          </div>
+          <!-- Inventory grid -->
+          <div class="equip-inv-divider"><span>Mochila</span></div>
+          <div id="inventory-grid"></div>
         </div>
 
         <!-- SKILLS TAB -->
@@ -340,6 +313,36 @@
                   <button class="btn-skill" data-skill="luck">+</button>
                 </div>
               </div>
+              <div class="skill-row">
+                <div class="skill-left">
+                  <span class="skill-icon">⚡</span>
+                  <span class="skill-name">Agilidade</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-agility">0</span>
+                  <button class="btn-skill" data-skill="agility">+</button>
+                </div>
+              </div>
+              <div class="skill-row">
+                <div class="skill-left">
+                  <span class="skill-icon">💨</span>
+                  <span class="skill-name">Velocidade</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-speed">0</span>
+                  <button class="btn-skill" data-skill="speed">+</button>
+                </div>
+              </div>
+              <div class="skill-row">
+                <div class="skill-left">
+                  <span class="skill-icon">🎯</span>
+                  <span class="skill-name">Crítico</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-critical">0</span>
+                  <button class="btn-skill" data-skill="critical">+</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -348,6 +351,10 @@
 
     <!-- BOTTOM: Chat -->
     <div id="chat-panel">
+      <div id="chat-topbar">
+        <span id="chat-topbar-label">💬 Chat</span>
+        <button id="btn-chat-toggle" title="Minimizar chat">▼</button>
+      </div>
       <div id="chat-messages"></div>
       <div id="chat-input-row">
         <input type="text" id="chat-input" placeholder="Pressione Enter para enviar..." maxlength="200" autocomplete="off">
@@ -359,9 +366,17 @@
   <!-- NPC DIALOG -->
   <div id="npc-dialog" style="display:none;">
     <div id="npc-dialog-box">
-      <h3 id="npc-dialog-name">NPC</h3>
+      <div class="corner corner-tl"></div>
+      <div class="corner corner-tr"></div>
+      <div class="corner corner-bl"></div>
+      <div class="corner corner-br"></div>
+      <div class="npc-dialog-head">
+        <h3 id="npc-dialog-name">NPC</h3>
+        <div class="npc-head-divider"><span class="divider-gem">◆</span></div>
+      </div>
       <p id="npc-dialog-text">Texto</p>
-      <div id="npc-dialog-buttons"></div>
+      <div id="npc-dialog-content"></div>
+      <div id="npc-dialog-footer"></div>
     </div>
   </div>
 

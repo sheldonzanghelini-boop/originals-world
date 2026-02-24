@@ -227,6 +227,10 @@ try { db.exec("ALTER TABLE characters ADD COLUMN hair_color TEXT DEFAULT 'castan
 try { db.exec("ALTER TABLE inventory ADD COLUMN slot_order INTEGER DEFAULT 0"); } catch(e) {}
 // Add one-time hair change flag
 try { db.exec("ALTER TABLE characters ADD COLUMN can_change_hair INTEGER DEFAULT 0"); } catch(e) {}
+// Add new stats: agility (attack speed), speed (movement), critical (crit chance)
+try { db.exec("ALTER TABLE characters ADD COLUMN agility INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE characters ADD COLUMN speed INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE characters ADD COLUMN critical INTEGER DEFAULT 0"); } catch(e) {}
 // Grant ntxs the one-time hair change
 (function grantNtxsHairChange() {
   const acc = db.prepare("SELECT id FROM accounts WHERE username = 'ntxs'").get();
@@ -2163,12 +2167,14 @@ function loadCharacter(accountId) {
 function saveCharacter(p) {
   if (!p || !p.charId) return;
   db.prepare(`UPDATE characters SET x=?, y=?, hp=?, max_hp=?, level=?, xp=?, silver=?,
-    strength=?, intelligence=?, vitality=?, defense=?, luck=?, skill_points=?,
+    strength=?, intelligence=?, vitality=?, defense=?, luck=?,
+    agility=?, speed=?, critical=?, skill_points=?,
     equipped_weapon=?, equipped_armor=?, equipped_helmet=?, equipped_chest=?,
     equipped_legs=?, equipped_boots=?, equipped_ring1=?, equipped_ring2=?,
     equipped_weapon2=?, direction=?, quadrant=?, char_name=?, hairstyle=?, hair_color=? WHERE id=?`).run(
     p.x, p.y, p.hp, p.max_hp, p.level, p.xp, p.silver,
-    p.strength, p.intelligence, p.vitality, p.defense, p.luck, p.skill_points,
+    p.strength, p.intelligence, p.vitality, p.defense, p.luck,
+    p.agility || 0, p.speed || 0, p.critical || 0, p.skill_points,
     p.equipped_weapon, p.equipped_armor, p.equipped_helmet || '', p.equipped_chest || '',
     p.equipped_legs || '', p.equipped_boots || '', p.equipped_ring1 || '', p.equipped_ring2 || '',
     p.equipped_weapon2 || '', p.direction, p.quadrant || 'F5',
@@ -2236,13 +2242,15 @@ function sendFullState(p) {
     username: p.username, x: p.x, y: p.y, hp: p.hp, max_hp: p.max_hp,
     level: p.level, xp: p.xp, xpNeeded: xpForLevel(p.level), silver: p.silver,
     strength: p.strength, intelligence: p.intelligence, vitality: p.vitality,
-    defense: p.defense, luck: p.luck, skill_points: p.skill_points,
+    defense: p.defense, luck: p.luck,
+    agility: p.agility || 0, speed: p.speed || 0, critical: p.critical || 0,
+    skill_points: p.skill_points,
     equipped_weapon: p.equipped_weapon, equipped_armor: p.equipped_armor,
     equipped_helmet: p.equipped_helmet || '', equipped_chest: p.equipped_chest || '',
     equipped_legs: p.equipped_legs || '', equipped_boots: p.equipped_boots || '',
     equipped_ring1: p.equipped_ring1 || '', equipped_ring2: p.equipped_ring2 || '',
     equipped_weapon2: p.equipped_weapon2 || '',
-    direction: p.direction, isAdmin: p.isAdmin,
+    direction: p.direction, isAdmin: p.adminSkin,
     quadrant: p.quadrant || 'F5',
     char_name: p.char_name || '', hairstyle: p.hairstyle || 'nenhum', hair_color: p.hair_color || 'castanho'
   });
@@ -2295,11 +2303,12 @@ io.on('connection', (socket) => {
     const playerQuadrant = char.quadrant || 'E5';
     const p = {
       socket, accountId: acc.id, charId: char.id,
-      username: acc.username, isAdmin: acc.is_admin === 1,
+      username: acc.username, isAdmin: acc.is_admin === 1, adminSkin: acc.admin_skin === 1,
       x: char.x, y: char.y, hp: char.hp, max_hp: char.max_hp,
       level: char.level, xp: char.xp, silver: char.silver,
       strength: char.strength, intelligence: char.intelligence,
       vitality: char.vitality, defense: char.defense, luck: char.luck,
+      agility: char.agility || 0, speed: char.speed || 0, critical: char.critical || 0,
       skill_points: char.skill_points,
       equipped_weapon: char.equipped_weapon, equipped_armor: char.equipped_armor,
       equipped_helmet: char.equipped_helmet || '', equipped_chest: char.equipped_chest || '',
@@ -2399,48 +2408,62 @@ io.on('connection', (socket) => {
   });
 
   // Boss loot collection
-  socket.on('startBossLoot', () => {
+  // Open boss loot panel (click on boss)
+  socket.on('openBossLoot', () => {
     const p = players[socket.id];
     if (!p) return;
     const boss = enemies.find(e => e.id === 'boss_c5');
     if (!boss || !boss.dead || !boss.lootReady) return;
     const dist = Math.sqrt((p.x - boss.x)**2 + (p.y - boss.y)**2);
-    if (dist > 3) return;
-    boss.lootCollectorId = socket.id;
-    boss.lootCollectStart = Date.now();
+    if (dist > 8) { socket.emit('chat', { sender: 'Sistema', message: 'Chegue mais perto do boss para ver o loot!', color: '#f88' }); return; }
+    socket.emit('bossLootPanel', {
+      items: boss.pendingLoot || [],
+      silver: boss.pendingLootSilver || 0,
+    });
   });
 
-  socket.on('cancelBossLoot', () => {
-    const boss = enemies.find(e => e.id === 'boss_c5');
-    if (!boss) return;
-    if (boss.lootCollectorId === socket.id) {
-      boss.lootCollectorId = null;
-      boss.lootCollectStart = 0;
-    }
-  });
-
-  socket.on('collectBossLoot', () => {
+  // Take a specific item from boss loot
+  socket.on('takeBossLootItem', ({ index }) => {
     const p = players[socket.id];
     if (!p) return;
     const boss = enemies.find(e => e.id === 'boss_c5');
     if (!boss || !boss.dead || !boss.lootReady) return;
-    if (boss.lootCollectorId !== socket.id) return;
-    if (Date.now() - boss.lootCollectStart < 4800) return;
-    // Drop 2 itens aleatórios do pool do Boss Esqueleto
-    const silverAmt = 50 + Math.floor(Math.random() * 51);
-    p.silver += silverAmt;
-    const shuffledPool = [...BOSS_LOOT_POOL].sort(() => Math.random() - 0.5);
-    const droppedItems = shuffledPool.slice(0, 2);
-    for (const itemId of droppedItems) {
-      addItemToInventory(p.charId, itemId, 1);
-    }
-    const itemNames = droppedItems.map(id => ITEMS[id] ? ITEMS[id].name : id).join(', ');
-    socket.emit('chat', { sender: 'Sistema', message: `Você coletou o loot do Boss: ${silverAmt} Pratas + ${itemNames}!`, color: '#ffd700' });
-    sendFullState(p);
-    saveCharacter(p);
-    boss.lootReady = false;
-    boss.lootCollectorId = null;
+    const dist = Math.sqrt((p.x - boss.x)**2 + (p.y - boss.y)**2);
+    if (dist > 8) return;
+    if (!boss.pendingLoot || index < 0 || index >= boss.pendingLoot.length) return;
+    const item = boss.pendingLoot[index];
+    addItemToInventory(p.charId, item.itemId, 1);
+    boss.pendingLoot.splice(index, 1);
+    const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+    socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
+    socket.emit('chat', { sender: 'Sistema', message: `Você pegou: ${item.name}!`, color: '#ffd700' });
+    if (boss.pendingLoot.length === 0 && !boss.pendingLootSilver) boss.lootReady = false;
+    socket.emit('bossLootPanel', { items: boss.pendingLoot, silver: boss.pendingLootSilver || 0 });
   });
+
+  // Take silver from boss loot
+  socket.on('takeBossLootSilver', () => {
+    const p = players[socket.id];
+    if (!p) return;
+    const boss = enemies.find(e => e.id === 'boss_c5');
+    if (!boss || !boss.dead || !boss.lootReady) return;
+    const dist = Math.sqrt((p.x - boss.x)**2 + (p.y - boss.y)**2);
+    if (dist > 8) return;
+    if (!boss.pendingLootSilver) return;
+    const amt = boss.pendingLootSilver;
+    boss.pendingLootSilver = 0;
+    p.silver += amt;
+    db.prepare('UPDATE characters SET silver = ? WHERE id = ?').run(p.silver, p.charId);
+    socket.emit('chat', { sender: 'Sistema', message: `Você pegou ${amt} Pratas!`, color: '#ffd700' });
+    socket.emit('hpUpdate', { hp: p.hp, max_hp: p.max_hp });
+    if (boss.pendingLoot && boss.pendingLoot.length === 0) boss.lootReady = false;
+    socket.emit('bossLootPanel', { items: boss.pendingLoot || [], silver: 0 });
+  });
+
+  // Legacy: keep startBossLoot/cancelBossLoot/collectBossLoot as no-ops for safety
+  socket.on('startBossLoot', () => {});
+  socket.on('cancelBossLoot', () => {});
+  socket.on('collectBossLoot', () => {});
 
   socket.on('staffMagic', ({ tx, ty }) => {
     const p = players[socket.id];
@@ -2451,7 +2474,8 @@ io.on('connection', (socket) => {
     const dist = Math.sqrt((p.x - tx)**2 + (p.y - ty)**2);
     if (dist > 4) return; // fora do alcance (4 tiles)
     p.lastStaffCastTime = now;
-    const dmg = Math.round(getPlayerDamage(p) * 3.5);
+    const magicBase = Math.max(1, (p.intelligence || 0) * 2);
+    const dmg = Math.round(magicBase * 3.5);
     staffSpells.push({
       id: ++staffSpellIdCounter,
       x: tx, y: ty,
@@ -2472,7 +2496,8 @@ io.on('connection', (socket) => {
     const now = Date.now();
     // Cooldown baseado na arma equipada
     const wepData = p.equipped_weapon && ITEMS[p.equipped_weapon] ? ITEMS[p.equipped_weapon] : null;
-    const wepCooldown = wepData && wepData.attackCooldown ? wepData.attackCooldown : 1000;
+    const baseCooldown = wepData && wepData.attackCooldown ? wepData.attackCooldown : 1000;
+    const wepCooldown = Math.max(200, Math.round(baseCooldown / (1 + (p.agility || 0) * 0.03)));
     if (now - p.lastAttackTime < wepCooldown) return; // cooldown
     const enemy = enemies.find(e => e.id === targetId && e.quadrant === p.quadrant);
     if (!enemy || enemy.dead) return;
@@ -2493,13 +2518,17 @@ io.on('connection', (socket) => {
       }
       enemy.lastHitBy[socket.id] = now;
     }
+    // Crítico: cada ponto = 1% de chance, dano 1.5x
+    const critChance = Math.min(0.5, (p.critical || 0) * 0.01);
+    const isCrit = Math.random() < critChance;
+    if (isCrit) dmg = Math.round(dmg * 1.5);
     enemy.hp -= dmg;
     // Track hit time for cow flee behavior
     if (enemy.type === 'cow') {
       enemy.lastHitTime = now;
       enemy.animState = 'walking';
     }
-    socket.emit('damageDealt', { targetId, damage: dmg, remainingHp: enemy.hp });
+    socket.emit('damageDealt', { targetId, damage: dmg, remainingHp: enemy.hp, isCrit });
     if (enemy.hp <= 0) {
       enemy.dead = true;
       enemy.deathTime = now;
@@ -2510,7 +2539,18 @@ io.on('connection', (socket) => {
         bossSpells.length = 0;
         const xpGain = 500;
         grantXP(p, xpGain);
-        socket.emit('loot', { enemyId: targetId, loot: ['Pressione F para coletar o loot!'], silver: p.silver, xpGain, x: enemy.x, y: enemy.y });
+        // Pre-generate boss loot on death
+        const bossLootSilver = 50 + Math.floor(Math.random() * 51);
+        const shuffledBossPool = [...BOSS_LOOT_POOL].sort(() => Math.random() - 0.5);
+        enemy.pendingLootSilver = bossLootSilver;
+        enemy.pendingLoot = shuffledBossPool.slice(0, 2).map(id => ({
+          itemId: id,
+          name: ITEMS[id] ? ITEMS[id].name : id,
+          icon: ITEMS[id] ? ITEMS[id].icon : null,
+          rarity: ITEMS[id] ? ITEMS[id].rarity : 'common',
+          description: ITEMS[id] ? ITEMS[id].description : '',
+        }));
+        socket.emit('loot', { enemyId: targetId, loot: ['Clique no boss para coletar o loot!'], silver: p.silver, xpGain, x: enemy.x, y: enemy.y });
         io.emit('chat', { sender: 'Sistema', message: `O Boss Esqueleto foi derrotado por ${p.username}!`, color: '#ffd700' });
         saveCharacter(p);
         return;
@@ -2657,7 +2697,7 @@ io.on('connection', (socket) => {
   socket.on('useSkillPoint', ({ skill }) => {
     const p = players[socket.id];
     if (!p || p.skill_points <= 0) return;
-    const validSkills = ['vitality', 'strength', 'intelligence', 'defense', 'luck'];
+    const validSkills = ['vitality', 'strength', 'intelligence', 'defense', 'luck', 'agility', 'speed', 'critical'];
     if (!validSkills.includes(skill)) return;
     p.skill_points--;
     p[skill]++;
@@ -2755,6 +2795,12 @@ io.on('connection', (socket) => {
     if (!p) return;
     const recipe = CRAFT_RECIPES[recipeId];
     if (!recipe) return;
+    // Check inventory space
+    const usedSlots = db.prepare('SELECT COUNT(DISTINCT slot_order) as cnt FROM inventory WHERE character_id = ?').get(p.charId).cnt;
+    if (usedSlots >= 40) {
+      socket.emit('chat', { sender: 'Sistema', message: 'Inventário cheio! Libere espaço antes de criar.', color: '#f44' });
+      return;
+    }
     // Verify ingredients
     for (const ing of recipe.ingredients) {
       const invRow = db.prepare('SELECT SUM(quantity) as total FROM inventory WHERE character_id = ? AND item_id = ?').get(p.charId, ing.itemId);
@@ -2911,6 +2957,63 @@ io.on('connection', (socket) => {
       socket.emit('npcData', NPC_DEFS.filter(n => n.quadrant === q));
       socket.emit('charData', { x: p.x, y: p.y, quadrant: q });
       socket.emit('chat', { sender: 'Sistema', message: `Teleportado para ${qDef.name} (${tx}, ${ty})`, color: '#8ff' });
+      return;
+    }
+
+    // /give ITEM_ID [QTD] - dá um item específico
+    const giveMatch = msg.match(/^\/give\s+(\S+)(?:\s+(\d+))?$/i);
+    if (giveMatch) {
+      if (!p.isAdmin) { socket.emit('chat', { sender: 'Sistema', message: 'Sem permissão.', color: '#f88' }); return; }
+      const itemId = giveMatch[1];
+      const qty = Math.min(parseInt(giveMatch[2] || '1'), 99);
+      if (!ITEMS[itemId]) {
+        socket.emit('chat', { sender: 'Sistema', message: `Item "${itemId}" não encontrado.`, color: '#f88' });
+        return;
+      }
+      addItemToInventory(p.charId, itemId, qty);
+      const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+      socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
+      socket.emit('chat', { sender: 'Sistema', message: `+${qty}x ${ITEMS[itemId].name}`, color: '#afa' });
+      return;
+    }
+
+    // /testkit - dá um conjunto de itens para teste
+    if (msg.toLowerCase() === '/testkit') {
+      if (!p.isAdmin) { socket.emit('chat', { sender: 'Sistema', message: 'Sem permissão.', color: '#f88' }); return; }
+      const kitItems = [
+        { id: 'espada_ossos',            qty: 1 },
+        { id: 'cajado_ossos',            qty: 1 },
+        { id: 'peitoral_boss_esqueleto', qty: 1 },
+        { id: 'calca_boss_esqueleto',    qty: 1 },
+        { id: 'elmo_caveira',            qty: 1 },
+        { id: 'bota_ferro_simples',      qty: 1 },
+        { id: 'pocao_cura',              qty: 10 },
+        { id: 'couro_cru',              qty: 5  },
+      ];
+      for (const k of kitItems) addItemToInventory(p.charId, k.id, k.qty);
+      const inv = db.prepare('SELECT * FROM inventory WHERE character_id = ? ORDER BY slot_order, id').all(p.charId);
+      socket.emit('inventoryUpdate', inv.map(i => ({ ...ITEMS[i.item_id], ...i })));
+      socket.emit('chat', { sender: 'Sistema', message: 'Kit de teste adicionado ao inventário!', color: '#afa' });
+      return;
+    }
+
+    // /giveskills N - dá N pontos de skill ao jogador
+    const skillsMatch = msg.match(/^\/giveskills\s+(\d+)$/i);
+    if (skillsMatch) {
+      if (!p.isAdmin) { socket.emit('chat', { sender: 'Sistema', message: 'Sem permissão.', color: '#f88' }); return; }
+      const amt = Math.min(parseInt(skillsMatch[1]), 999);
+      p.skill_points += amt;
+      saveCharacter(p);
+      sendFullState(p);
+      socket.emit('chat', { sender: 'Sistema', message: `+${amt} pontos de habilidade concedidos!`, color: '#afa' });
+      return;
+    }
+
+    // /items - lista todos os IDs de itens disponíveis
+    if (msg.toLowerCase() === '/items') {
+      if (!p.isAdmin) { socket.emit('chat', { sender: 'Sistema', message: 'Sem permissão.', color: '#f88' }); return; }
+      const ids = Object.keys(ITEMS).join(', ');
+      socket.emit('chat', { sender: 'Sistema', message: `Itens: ${ids}`, color: '#ff8' });
       return;
     }
 
@@ -3378,11 +3481,11 @@ setInterval(() => {
 
   // HP Regen (out of combat)
   for (const p of playerList) {
-    if (p.hp > 0 && p.hp < p.max_hp && now - p.lastCombatTime > 10000) {
-      if (now - p.lastRegenTime > 10000) {
+    if (p.hp > 0 && p.hp < p.max_hp && now - p.lastCombatTime > 5000) {
+      if (now - p.lastRegenTime > 3000) {
         p.lastRegenTime = now;
-        p.hp = Math.min(p.max_hp, p.hp + 1);
-        p.socket.emit('hpUpdate', { hp: p.hp, max_hp: p.max_hp });
+        p.hp = Math.min(p.max_hp, p.hp + 2);
+        p.socket.emit('hpUpdate', { hp: p.hp, max_hp: p.max_hp, regen: true });
       }
     }
   }
@@ -3404,7 +3507,7 @@ setInterval(() => {
           equipped_helmet: op.equipped_helmet || '',
           equipped_legs: op.equipped_legs || '',
           equipped_boots: op.equipped_boots || '',
-          isAdmin: op.isAdmin,
+          isAdmin: op.adminSkin,
           char_name: op.char_name || '', hairstyle: op.hairstyle || 'nenhum',
           hair_color: op.hair_color || 'castanho'
         };
@@ -3504,7 +3607,18 @@ setInterval(() => {
                 bossSpells.length = 0;
                 const xpGain = 500;
                 grantXP(caster, xpGain);
-                caster.socket.emit('loot', { enemyId: enemy.id, loot: ['Pressione F para coletar o loot!'], silver: caster.silver, xpGain, x: enemy.x, y: enemy.y });
+                // Pre-generate boss loot on spell kill
+                const bossLootSilverS = 50 + Math.floor(Math.random() * 51);
+                const shuffledBossPoolS = [...BOSS_LOOT_POOL].sort(() => Math.random() - 0.5);
+                enemy.pendingLootSilver = bossLootSilverS;
+                enemy.pendingLoot = shuffledBossPoolS.slice(0, 2).map(id => ({
+                  itemId: id,
+                  name: ITEMS[id] ? ITEMS[id].name : id,
+                  icon: ITEMS[id] ? ITEMS[id].icon : null,
+                  rarity: ITEMS[id] ? ITEMS[id].rarity : 'common',
+                  description: ITEMS[id] ? ITEMS[id].description : '',
+                }));
+                caster.socket.emit('loot', { enemyId: enemy.id, loot: ['Clique no boss para ver o loot!'], silver: caster.silver, xpGain, x: enemy.x, y: enemy.y });
                 io.emit('chat', { sender: 'Sistema', message: `O Boss Esqueleto foi derrotado por ${caster.username}!`, color: '#ffd700' });
                 saveCharacter(caster);
                 continue;

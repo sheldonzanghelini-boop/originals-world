@@ -1997,7 +1997,23 @@ const gameScreen = document.getElementById('game-screen');
 const loginError = document.getElementById('login-error');
 const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
+const registerError = document.getElementById('register-error');
 
+// ─ Toggle between login / register panels ─
+document.getElementById('link-to-register').addEventListener('click', () => {
+  document.getElementById('login-panel').style.display = 'none';
+  document.getElementById('register-panel').style.display = 'block';
+  loginError.textContent = '';
+  document.getElementById('reg-username').focus();
+});
+document.getElementById('link-to-login').addEventListener('click', () => {
+  document.getElementById('register-panel').style.display = 'none';
+  document.getElementById('login-panel').style.display = 'block';
+  if (registerError) registerError.textContent = '';
+  usernameInput.focus();
+});
+
+// ─ Login ─
 document.getElementById('btn-login').addEventListener('click', () => {
   const username = usernameInput.value.trim();
   const password = passwordInput.value;
@@ -2008,7 +2024,6 @@ document.getElementById('btn-login').addEventListener('click', () => {
     else {
       lastLoginCredentials = { username, password };
       if (res.needsHairstyle) {
-        // Mostrar seleção de cabelo antes de entrar no jogo (uso único)
         showHairSelection(res.hairstyle, res.hair_color);
       } else {
         startGame();
@@ -2017,22 +2032,31 @@ document.getElementById('btn-login').addEventListener('click', () => {
   });
 });
 
+// ─ Register (reads from register panel fields) ─
 document.getElementById('btn-register').addEventListener('click', () => {
-  const username = usernameInput.value.trim();
-  const password = passwordInput.value;
-  if (!username || !password) { loginError.textContent = 'Preencha todos os campos.'; return; }
-  if (username.length < 3) { loginError.textContent = 'Nome de usuário deve ter pelo menos 3 caracteres.'; return; }
-  if (password.length < 4) { loginError.textContent = 'Senha deve ter pelo menos 4 caracteres.'; return; }
-  loginError.textContent = '';
+  const username = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const passwordConfirm = document.getElementById('reg-password-confirm').value;
+  if (!username || !password) { registerError.textContent = 'Preencha todos os campos.'; return; }
+  if (username.length < 3) { registerError.textContent = 'Usuário deve ter pelo menos 3 caracteres.'; return; }
+  if (password.length < 4) { registerError.textContent = 'Senha deve ter pelo menos 4 caracteres.'; return; }
+  if (password !== passwordConfirm) { registerError.textContent = 'As senhas não coincidem.'; return; }
+  registerError.textContent = '';
   showCharCreation(username, password);
 });
 
-// Enter key to login
+// Enter key support
 passwordInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-login').click();
 });
 usernameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') passwordInput.focus();
+});
+document.getElementById('reg-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('reg-password-confirm').focus();
+});
+document.getElementById('reg-password-confirm').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-register').click();
 });
 
 function startGame() {
@@ -2198,7 +2222,10 @@ function showCharCreation(username, password) {
 
 function hideCharCreation() {
   document.getElementById('char-creation-screen').style.display = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
+  loginScreen.style.display = 'flex';
+  // Return to register panel (user came from there)
+  document.getElementById('login-panel').style.display = 'none';
+  document.getElementById('register-panel').style.display = 'block';
 }
 
 function selectHairstyle(style) {
@@ -2281,15 +2308,17 @@ async function confirmCharCreation() {
       btn.textContent = 'Entrar no Mundo ⚔️';
       setTimeout(() => {
         hideCharCreation();
-        loginError.style.color = '#ff4444';
-        loginError.textContent = res.error;
+        if (registerError) {
+          registerError.textContent = res.error;
+        }
       }, 1500);
     } else {
       socket.emit('login', { username, password }, (res2) => {
         document.getElementById('char-creation-screen').style.display = 'none';
         if (res2.error) {
-          document.getElementById('login-screen').style.display = 'flex';
-          loginError.style.color = '#ff4444';
+          loginScreen.style.display = 'flex';
+          document.getElementById('login-panel').style.display = 'block';
+          document.getElementById('register-panel').style.display = 'none';
           loginError.textContent = res2.error;
         } else {
           lastLoginCredentials = { username, password };
@@ -2375,7 +2404,7 @@ socket.on('chat', (data) => {
 socket.on('damageDealt', (data) => {
   const enemy = nearbyEnemies.find(e => e.id === data.targetId);
   if (enemy) {
-    showDamage(enemy.x, enemy.y, data.damage, '#ff4444');
+    showDamage(enemy.x, enemy.y, data.damage, '#ff4444', data.isCrit);
   }
   if (data.remainingHp <= 0) { targetEnemy = null; }
 });
@@ -2389,11 +2418,23 @@ socket.on('damageTaken', (data) => {
 });
 
 socket.on('hpUpdate', (data) => {
-  if (myChar) { myChar.hp = data.hp; myChar.max_hp = data.max_hp; updateStatusUI(); }
+  if (myChar) {
+    myChar.hp = data.hp;
+    myChar.max_hp = data.max_hp;
+    updateStatusUI();
+    if (data.regen) {
+      const bar = document.getElementById('hp-bar');
+      if (bar) { bar.classList.remove('regen-pulse'); void bar.offsetWidth; bar.classList.add('regen-pulse'); }
+    }
+  }
 });
 
 socket.on('xpUpdate', (data) => {
   if (myChar) { myChar.xp = data.xp; myChar.xpNeeded = data.xpNeeded; updateStatusUI(); }
+});
+
+socket.on('bossLootPanel', (data) => {
+  showBossLootPanel(data);
 });
 
 socket.on('levelUp', (data) => {
@@ -2404,6 +2445,7 @@ socket.on('levelUp', (data) => {
     myChar.skill_points = data.skill_points;
     updateStatusUI();
     updateSkillsUI();
+    showLevelUp(data.level);
   }
 });
 
@@ -2471,18 +2513,10 @@ document.addEventListener('keydown', (e) => {
       interactNearestNPC();
       break;
     case 'f': case 'F': {
-      // Check for dead boss loot first
       const deadBoss = nearbyEnemies.find(e => e.type === 'bossskeleton' && e.dead && e.lootReady);
       if (deadBoss && myChar) {
-        const dist = Math.sqrt((myChar.x - deadBoss.x)**2 + (myChar.y - deadBoss.y)**2);
-        if (dist < 3) {
-          if (!bossLootActive) {
-            bossLootActive = true;
-            bossLootStartTime = Date.now();
-            socket.emit('startBossLoot');
-          }
-          break;
-        }
+                socket.emit('openBossLoot');
+        break;
       }
       pickupNearestGroundItem();
       break;
@@ -2491,6 +2525,21 @@ document.addEventListener('keydown', (e) => {
       if (currentDialog) closeDialog();
       targetEnemy = null;
       break;
+    default: {
+      const keyNum = parseInt(e.key);
+      if (keyNum >= 1 && keyNum <= 5) {
+        const consumables = myInventory.filter(i => i.type === 'consumable');
+        const item = consumables[keyNum - 1];
+        if (item) {
+          const slotIdx = keyNum - 1;
+          const now = Date.now();
+          if (now - (hotbarCooldowns[slotIdx] || 0) >= POTION_COOLDOWN) {
+            hotbarCooldowns[slotIdx] = now;
+            socket.emit('useItem', { itemId: item.item_id });
+          }
+        }
+      }
+    }
   }
 });
 
@@ -2543,6 +2592,11 @@ canvas.addEventListener('click', (e) => {
     if (d < tolerance && d < closestDist) { closestDist = d; clickedEnemy = enemy; }
   }
   if (clickedEnemy) {
+    // Dead boss loot: click opens loot panel
+    if (clickedEnemy.type === 'bossskeleton' && clickedEnemy.dead && clickedEnemy.lootReady) {
+            socket.emit('openBossLoot');
+      return;
+    }
     // Cajado de Ossos: conjura magia na posição do inimigo em vez de auto-ataque
     if (myChar.equipped_weapon === 'cajado_ossos') {
       const now = Date.now();
@@ -2560,6 +2614,7 @@ canvas.addEventListener('click', (e) => {
     const dist = Math.sqrt((myChar.x - clickedEnemy.x)**2 + (myChar.y - clickedEnemy.y)**2);
     if (dist < attackRange && now - lastAttackTime > 1000) {
       lastAttackTime = now;
+      lastAttackCooldownDuration = 1000;
       socket.emit('attack', { targetId: clickedEnemy.id });
     }
     return;
@@ -2626,6 +2681,14 @@ document.getElementById('btn-send-chat').addEventListener('click', () => {
   chatInput.value = '';
 });
 
+// ============= CHAT TOGGLE =============
+document.getElementById('btn-chat-toggle').addEventListener('click', () => {
+  const panel = document.getElementById('chat-panel');
+  const btn = document.getElementById('btn-chat-toggle');
+  const minimized = panel.classList.toggle('minimized');
+  btn.textContent = minimized ? '▲' : '▼';
+});
+
 // ============= TABS =============
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -2643,8 +2706,8 @@ document.querySelectorAll('.btn-skill').forEach(btn => {
   });
 });
 
-// Unequip buttons (delegated to equip-grid)
-document.querySelector('.equip-grid').addEventListener('click', (e) => {
+// Unequip buttons (delegated to equip-body-grid)
+document.querySelector('.equip-body-grid').addEventListener('click', (e) => {
   const btn = e.target.closest('.equip-unequip-btn');
   if (btn) {
     e.stopPropagation();
@@ -2685,6 +2748,79 @@ function canMoveTo(x, y) {
     && !isBlocked(left, bottom) && !isBlocked(right, bottom);
 }
 
+// ============= HOTBAR + COOLDOWNS =============
+let hotbarCooldowns = [0, 0, 0, 0, 0]; // timestamps of last use per slot
+const POTION_COOLDOWN = 5000;
+let lastAttackCooldownDuration = 1000;
+
+function updateHotbar() {
+  const hotbar = document.getElementById('hotbar');
+  if (!hotbar) return;
+  const consumables = myInventory.filter(i => i.type === 'consumable');
+  const now = Date.now();
+  hotbar.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'hotbar-slot' + (consumables[i] ? ' has-item' : '');
+    const keyEl = document.createElement('span');
+    keyEl.className = 'hotbar-slot-key';
+    keyEl.textContent = i + 1;
+    slot.appendChild(keyEl);
+    if (consumables[i]) {
+      const item = consumables[i];
+      const iconEl = document.createElement('div');
+      iconEl.className = 'hotbar-slot-icon';
+      if (item.icon) {
+        const img = document.createElement('img');
+        img.src = item.icon;
+        img.style.cssText = 'width:24px;height:24px;object-fit:contain;image-rendering:pixelated;';
+        iconEl.appendChild(img);
+      } else {
+        iconEl.textContent = '🧪';
+      }
+      slot.appendChild(iconEl);
+      const nameEl = document.createElement('span');
+      nameEl.className = 'hotbar-slot-name';
+      nameEl.textContent = item.name || item.item_id;
+      slot.appendChild(nameEl);
+      const qtyEl = document.createElement('span');
+      qtyEl.className = 'hotbar-slot-qty';
+      qtyEl.textContent = item.quantity > 1 ? 'x' + item.quantity : '';
+      slot.appendChild(qtyEl);
+      const elapsed = now - (hotbarCooldowns[i] || 0);
+      const cdEl = document.createElement('div');
+      cdEl.className = 'hotbar-cooldown' + (elapsed < POTION_COOLDOWN ? '' : ' hidden');
+      if (elapsed < POTION_COOLDOWN) {
+        cdEl.textContent = Math.ceil((POTION_COOLDOWN - elapsed) / 1000);
+      }
+      slot.appendChild(cdEl);
+    }
+    hotbar.appendChild(slot);
+  }
+}
+
+function updateAttackCooldownBar() {
+  const wrap = document.getElementById('attack-cd-wrap');
+  const bar = document.getElementById('attack-cd-bar');
+  if (!wrap || !bar) return;
+  const elapsed = Date.now() - lastAttackTime;
+  const pct = Math.min(1, elapsed / lastAttackCooldownDuration);
+  if (pct >= 1) {
+    wrap.classList.remove('active');
+    bar.style.width = '100%';
+  } else {
+    wrap.classList.add('active');
+    bar.style.width = (pct * 100) + '%';
+  }
+}
+
+setInterval(() => {
+  if (myChar) {
+    updateHotbar();
+    updateAttackCooldownBar();
+  }
+}, 100);
+
 // ============= GAME LOOP =============
 function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
@@ -2700,11 +2836,12 @@ function gameLoop(timestamp) {
 function update(dt) {
   if (transitioning) return; // Wait for quadrant transition to complete
 
-  // Boss loot collection: check 5s elapsed
-  if (bossLootActive && bossLootStartTime > 0 && Date.now() - bossLootStartTime >= 5000) {
-    socket.emit('collectBossLoot');
-    bossLootActive = false;
-    bossLootStartTime = 0;
+  // Close boss loot panel if player moves too far
+  if (document.getElementById('boss-loot-panel') && myChar) {
+    const deadBoss = nearbyEnemies.find(e => e.type === 'bossskeleton' && e.dead && e.lootReady);
+    if (!deadBoss || Math.sqrt((myChar.x - deadBoss.x)**2 + (myChar.y - deadBoss.y)**2) > 6) {
+      closeBossLootPanel();
+    }
   }
   let dx = 0, dy = 0;
   if (keys.up) dy -= 1;
@@ -2717,8 +2854,10 @@ function update(dt) {
   if (moving) {
     // Normalize diagonal
     const len = Math.sqrt(dx*dx + dy*dy);
-    dx = (dx / len) * MOVE_SPEED;
-    dy = (dy / len) * MOVE_SPEED;
+    // Velocidade base normalizada pelo zoom (32 = tile default), + bônus do atributo Velocidade
+    const effectiveSpeed = (MOVE_SPEED + (myChar.speed || 0) * 0.004) * (32 / TILE_SIZE);
+    dx = (dx / len) * effectiveSpeed;
+    dy = (dy / len) * effectiveSpeed;
 
     // Set sprite direction
     if (keys.left) myChar.direction = 'left';
@@ -3048,6 +3187,9 @@ function drawMyPlayer(char) {
   const sy = char.y * TILE_SIZE - cameraY;
   const S = TILE_SIZE * 1.3; // sprite um pouco maior
   const half = S / 2;
+
+  // Level up aura (drawn behind character)
+  if (levelUpAuraStart > 0) drawLevelUpAura(sx, sy);
 
   let spriteName;
   const moving = keys.up || keys.down || keys.left || keys.right;  if (char.isAdmin) {
@@ -3520,7 +3662,7 @@ function drawEnemy(enemy) {
       ctx.fillStyle = '#ffd700';
       ctx.font = 'bold 12px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText('[F] Coletar Loot', sx, sy - BS * 1.1);
+      ctx.fillText('[Clique] Ver Loot', sx, sy - BS * 1.1);
       // Loot progress bar
       if (bossLootActive && bossLootStartTime > 0) {
         const elapsed = Math.min(1, (Date.now() - bossLootStartTime) / 5000);
@@ -3819,14 +3961,37 @@ function drawHPBar(sx, sy, hp, maxHp, color) {
 // ============= MINIMAP =============
 function drawMinimap() {
   if (!gameMap) return;
-  const mmW = 140, mmH = 100;
-  const mmX = canvas.width - mmW - 10, mmY = 10;
-  const tileW = mmW / mapWidth, tileH = mmH / mapHeight;
 
-  ctx.globalAlpha = 0.8;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4);
+  const mmW = 175, mmH = 160;
+  const mmX = canvas.width - mmW - 14;
+  const mmY = 14;
+  const tileW = mmW / mapWidth;
+  const tileH = mmH / mapHeight;
+  const R = 7;
 
+  ctx.save();
+
+  // Outer glow border (before clip)
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = 'rgba(212,167,80,0.45)';
+  ctx.strokeStyle = '#7a5a30';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(mmX, mmY, mmW, mmH, R);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Clip to rounded rect
+  ctx.beginPath();
+  ctx.roundRect(mmX, mmY, mmW, mmH, R);
+  ctx.clip();
+
+  // Dark base
+  ctx.fillStyle = 'rgba(4,3,1,0.88)';
+  ctx.fillRect(mmX, mmY, mmW, mmH);
+
+  // Tiles
+  ctx.globalAlpha = 0.9;
   for (let ty = 0; ty < mapHeight; ty++) {
     for (let tx = 0; tx < mapWidth; tx++) {
       const tile = gameMap[ty][tx];
@@ -3886,60 +4051,130 @@ function drawMinimap() {
         case T.DEAD_DIRT: ctx.fillStyle = '#3a2e18'; break;
         default: ctx.fillStyle = '#000';
       }
-      ctx.fillRect(mmX + tx * tileW, mmY + ty * tileH, Math.ceil(tileW), Math.ceil(tileH));
+      ctx.fillRect(mmX + tx * tileW, mmY + ty * tileH, Math.ceil(tileW) + 0.5, Math.ceil(tileH) + 0.5);
     }
   }
+  ctx.globalAlpha = 1;
 
   // Image objects on minimap
   for (const obj of mapObjects) {
     const img = mapObjectImages[obj.id];
     if (!img || !img.complete || !img.naturalWidth) continue;
-    const ox = mmX + obj.x * tileW;
-    const oy = mmY + obj.y * tileH;
-    const ow = Math.max(1, obj.width * tileW);
-    const oh = Math.max(1, obj.height * tileH);
-    ctx.drawImage(img, ox, oy, ow, oh);
+    ctx.drawImage(img, mmX + obj.x * tileW, mmY + obj.y * tileH,
+      Math.max(1, obj.width * tileW), Math.max(1, obj.height * tileH));
   }
 
-  // NPCs on minimap
-  ctx.fillStyle = '#ffd700';
-  for (const npc of npcs) {
-    ctx.fillRect(mmX + npc.x * tileW - 1, mmY + npc.y * tileH - 1, 3, 3);
-  }
+  // Viewport indicator
+  const vx = mmX + (cameraX / TILE_SIZE) * tileW;
+  const vy = mmY + (cameraY / TILE_SIZE) * tileH;
+  const vw = (canvas.width / TILE_SIZE) * tileW;
+  const vh = (canvas.height / TILE_SIZE) * tileH;
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(vx, vy, vw, vh);
 
-  // Other players
-  ctx.fillStyle = '#44ff44';
-  for (const op of Object.values(otherPlayers)) {
-    ctx.fillRect(mmX + op.x * tileW - 1, mmY + op.y * tileH - 1, 3, 3);
-  }
-
-  // My position
-  if (myChar) {
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(mmX + myChar.x * tileW - 2, mmY + myChar.y * tileH - 2, 4, 4);
-  }
-
-  // Enemies
-  ctx.fillStyle = '#ff4444';
+  // Enemies (red glowing circles)
   for (const e of nearbyEnemies) {
-    ctx.fillRect(mmX + e.x * tileW - 1, mmY + e.y * tileH - 1, 2, 2);
+    ctx.fillStyle = '#ff3030';
+    ctx.shadowBlur = 3;
+    ctx.shadowColor = '#ff0000';
+    ctx.beginPath();
+    ctx.arc(mmX + e.x * tileW, mmY + e.y * tileH, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // NPCs (golden glowing dots)
+  for (const npc of npcs) {
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(mmX + npc.x * tileW, mmY + npc.y * tileH, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // Other players (cyan dots)
+  for (const op of Object.values(otherPlayers)) {
+    ctx.fillStyle = '#44ffcc';
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = '#44ffcc';
+    ctx.beginPath();
+    ctx.arc(mmX + op.x * tileW, mmY + op.y * tileH, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // My player: mini sprite with white halo
+  if (myChar) {
+    const px = mmX + myChar.x * tileW;
+    const py = mmY + myChar.y * tileH;
+    const sprW = 11, sprH = 14;
+
+    // White halo
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#ffffff';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.arc(px, py - 2, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Idle sprite scaled down
+    const spr = sprites['parado'];
+    if (spr && spr.complete && spr.naturalWidth > 0) {
+      ctx.drawImage(spr, px - sprW / 2, py - sprH * 0.85, sprW, sprH);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(px, py - 6);
+      ctx.lineTo(px - 3, py + 2);
+      ctx.lineTo(px + 3, py + 2);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
-  ctx.globalAlpha = 1;
+  // Vignette overlay
+  const vig = ctx.createRadialGradient(
+    mmX + mmW / 2, mmY + mmH / 2, mmW * 0.2,
+    mmX + mmW / 2, mmY + mmH / 2, mmW * 0.9
+  );
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(mmX, mmY, mmW, mmH);
 
-  // Border
-  ctx.strokeStyle = '#6b4c2a';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4);
+  ctx.restore();
 
-  // Quadrant label
-  ctx.fillStyle = '#ffd700';
-  ctx.font = 'bold 13px Arial';
+  // Inner border on top
+  ctx.save();
+  ctx.strokeStyle = 'rgba(122,90,48,0.85)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(mmX, mmY, mmW, mmH, R);
+  ctx.stroke();
+  ctx.restore();
+
+  // Label panel below map
+  const labelY = mmY + mmH + 4;
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,6,3,0.82)';
+  ctx.strokeStyle = 'rgba(74,53,32,0.7)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(mmX, labelY, mmW, 28, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#d4a750';
+  ctx.font = 'bold 12px Arial';
   ctx.textAlign = 'left';
-  ctx.fillText(`[${currentQuadrant}]`, mmX, mmY + mmH + 16);
-  ctx.fillStyle = '#cccccc';
-  ctx.font = '11px Arial';
-  ctx.fillText(currentQuadrantName, mmX, mmY + mmH + 30);
+  ctx.fillText('[' + currentQuadrant + ']', mmX + 8, labelY + 13);
+  ctx.fillStyle = '#b8a078';
+  ctx.font = '10px Arial';
+  ctx.fillText(currentQuadrantName, mmX + 8, labelY + 24);
+  ctx.restore();
 }
 
 // ============= UI UPDATES =============
@@ -3948,11 +4183,6 @@ function updateStatusUI() {
   document.getElementById('char-name').textContent = myChar.char_name || myChar.username || 'Jogador';
   document.getElementById('stat-level').textContent = myChar.level;
   document.getElementById('stat-silver').textContent = myChar.silver;
-  document.getElementById('stat-hp-max').textContent = myChar.max_hp;
-  document.getElementById('stat-str').textContent = myChar.strength;
-  document.getElementById('stat-int').textContent = myChar.intelligence;
-  document.getElementById('stat-def').textContent = myChar.defense;
-  document.getElementById('stat-luck').textContent = myChar.luck;
 
   // HP bar
   const hpPct = Math.max(0, (myChar.hp / myChar.max_hp) * 100);
@@ -3986,6 +4216,9 @@ function updateStatusUI() {
     if (itemId && ITEMS_CLIENT[itemId]) {
       box.classList.add('has-item');
       const itemData = ITEMS_CLIENT[itemId];
+      const rarityCol = itemData.rarity && RARITY_COLORS[itemData.rarity] ? RARITY_COLORS[itemData.rarity] : '#5a8a3a';
+      box.style.borderColor = rarityCol;
+      box.style.boxShadow = '0 0 6px ' + rarityCol + '66';
       if (itemData.icon) {
         const iconImg = document.createElement('img');
         iconImg.src = itemData.icon;
@@ -4006,6 +4239,8 @@ function updateStatusUI() {
       box.appendChild(unequipBtn);
     } else {
       box.classList.remove('has-item');
+      box.style.borderColor = '';
+      box.style.boxShadow = '';
       const label = document.createElement('span');
       label.className = 'equip-box-label';
       label.textContent = info.label;
@@ -4013,6 +4248,7 @@ function updateStatusUI() {
     }
   }
 
+  drawStatusPortrait();
   updateSkillsUI();
 }
 
@@ -4024,10 +4260,70 @@ function updateSkillsUI() {
   document.getElementById('skill-intelligence').textContent = myChar.intelligence;
   document.getElementById('skill-defense').textContent = myChar.defense;
   document.getElementById('skill-luck').textContent = myChar.luck;
+  document.getElementById('skill-agility').textContent = myChar.agility || 0;
+  document.getElementById('skill-speed').textContent = myChar.speed || 0;
+  document.getElementById('skill-critical').textContent = myChar.critical || 0;
 
   document.querySelectorAll('.btn-skill').forEach(btn => {
     btn.disabled = !myChar.skill_points || myChar.skill_points <= 0;
   });
+}
+
+function drawStatusPortrait() {
+  const canvas = document.getElementById('portrait-canvas');
+  if (!canvas || !myChar) return;
+  const pCtx = canvas.getContext('2d');
+  const W = canvas.width;  // 72
+  const H = canvas.height; // 72
+  pCtx.clearRect(0, 0, W, H);
+  pCtx.fillStyle = '#080503';
+  pCtx.fillRect(0, 0, W, H);
+
+  // Usa a mesma geometria do drawMyPlayer, ampliado para mostrar só a cabeça
+  const PAD = 6;
+  const S = Math.round((H - PAD * 2) / 0.38); // ≈ 158px — cabeça ocupa ~38% do sprite
+  const sx = W / 2;                             // centro horizontal
+  const sy = PAD + S * 0.75;                   // topo do sprite fica em PAD
+
+  if (myChar.isAdmin) {
+    const spr = sprites['admin'];
+    if (spr && spr.complete && spr.naturalWidth > 0)
+      pCtx.drawImage(spr, sx - S / 2, sy - S * 0.75, S, S);
+    return;
+  }
+
+  // 1. Corpo base (mesmo offset que drawMyPlayer)
+  const spr = sprites['parado'];
+  if (spr && spr.complete && spr.naturalWidth > 0) {
+    pCtx.drawImage(spr, sx - S / 2, sy - S * 0.75, S, S);
+  }
+
+  // 2. Cabelo — offset idêntico ao drawMyPlayer: hairY = sy - S*0.75 - S*0.05
+  if (myChar.hairstyle && myChar.hairstyle !== 'nenhum' && !myChar.equipped_helmet) {
+    const hairImg = getTintedHair(myChar.hairstyle, myChar.hair_color || 'castanho');
+    if (hairImg) {
+      const hairY = sy - S * 0.75 - S * 0.05;
+      pCtx.drawImage(hairImg, sx - S / 2, hairY, S, S * 1.05);
+    }
+  }
+
+  // 3. Peitoral (ombros/pescoço aparecem na base da cabeça)
+  if (myChar.equipped_chest && CHEST_SPRITES && CHEST_SPRITES[myChar.equipped_chest]) {
+    const s = sprites[CHEST_SPRITES[myChar.equipped_chest][0]];
+    if (s && s.complete && s.naturalWidth > 0)
+      pCtx.drawImage(s, sx - S / 2, sy - S * 0.75, S, S);
+  }
+
+  // 4. Elmo
+  if (myChar.equipped_helmet && HELMET_SPRITES && HELMET_SPRITES[myChar.equipped_helmet]) {
+    const s = sprites[HELMET_SPRITES[myChar.equipped_helmet][0]];
+    if (s && s.complete && s.naturalWidth > 0) {
+      const isTall = TALL_HELMET_IDS && TALL_HELMET_IDS.has(myChar.equipped_helmet);
+      const drawY = isTall ? sy - S * 0.75 - S * 0.05 : sy - S * 0.75;
+      const drawH = isTall ? S * 1.05 : S;
+      pCtx.drawImage(s, sx - S / 2, drawY, S, drawH);
+    }
+  }
 }
 
 function updateInventoryUI() {
@@ -4050,14 +4346,14 @@ function updateInventoryUI() {
   }
   const visibleItems = myInventory.filter(item => !usedRowIds.has(item.id));
 
-  // Build slot map: slot_order (0-19) -> item (allows real gaps)
+  // Build slot map: slot_order -> item (allows real gaps)
   const slotMap = {};
   for (const item of visibleItems) {
     const pos = typeof item.slot_order === 'number' ? item.slot_order : 99;
-    if (pos >= 0 && pos < 30) slotMap[pos] = item;
+    if (pos >= 0 && pos < 40) slotMap[pos] = item;
   }
 
-  const totalSlots = 30;
+  const totalSlots = 40;
   for (let i = 0; i < totalSlots; i++) {
     const item = slotMap[i] || null;
     const slot = document.createElement('div');
@@ -4361,107 +4657,103 @@ function showNpcDialog(data) {
   document.getElementById('npc-dialog-name').textContent = data.npcName;
   document.getElementById('npc-dialog-text').textContent = data.message;
 
-  const btns = document.getElementById('npc-dialog-buttons');
-  btns.innerHTML = '';
+  const content = document.getElementById('npc-dialog-content');
+  const footer  = document.getElementById('npc-dialog-footer');
+  content.innerHTML = '';
+  footer.innerHTML  = '';
 
+  // Quest: aceitar
   if (data.action === 'offer') {
-    const acceptBtn = document.createElement('button');
-    acceptBtn.textContent = 'Aceitar Missão';
-    acceptBtn.className = 'dialog-btn-accept';
-    acceptBtn.addEventListener('click', () => {
-      socket.emit('acceptQuest', { questId: data.questId });
-      closeDialog();
-    });
-    btns.appendChild(acceptBtn);
+    const btn = document.createElement('button');
+    btn.textContent = 'Aceitar Missão';
+    btn.className = 'dialog-btn-accept';
+    btn.addEventListener('click', () => { socket.emit('acceptQuest', { questId: data.questId }); closeDialog(); });
+    footer.appendChild(btn);
   }
 
+  // Quest: completar
   if (data.action === 'complete') {
-    const completeBtn = document.createElement('button');
-    completeBtn.textContent = 'Receber Recompensa';
-    completeBtn.className = 'dialog-btn-complete';
-    completeBtn.addEventListener('click', () => {
-      socket.emit('completeQuest', { questId: data.questId });
-      closeDialog();
-    });
-    btns.appendChild(completeBtn);
+    const btn = document.createElement('button');
+    btn.textContent = 'Receber Recompensa';
+    btn.className = 'dialog-btn-complete';
+    btn.addEventListener('click', () => { socket.emit('completeQuest', { questId: data.questId }); closeDialog(); });
+    footer.appendChild(btn);
   }
 
-  // Shop (Ferreiro)
+  // Loja (Ferreiro)
   if (data.isShop && data.shopItems && data.shopItems.length > 0) {
-    const shopDiv = document.createElement('div');
-    shopDiv.className = 'craft-recipes';
-    shopDiv.innerHTML = '<h4 style="color:#d4a750;margin:8px 0 4px;">🛍️ Itens à venda:</h4>' +
-      `<div style="color:#aaa;font-size:12px;margin-bottom:6px;">Suas pratas: <strong style="color:#f5c518;">${data.silverBalance}</strong></div>`;
+    const titleEl = document.createElement('div');
+    titleEl.className = 'craft-section-title';
+    titleEl.textContent = '🛒 Itêns à Venda';
+    content.appendChild(titleEl);
+
+    const silverInfo = document.createElement('div');
+    silverInfo.className = 'craft-silver-info';
+    silverInfo.innerHTML = '🪙 Suas pratas: <strong>' + data.silverBalance + '</strong>';
+    content.appendChild(silverInfo);
+
     for (const item of data.shopItems) {
-      const itemDiv = document.createElement('div');
-      itemDiv.className = 'craft-recipe-item';
-      itemDiv.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;">
-          ${item.icon ? `<img src="${item.icon}" style="width:32px;height:32px;image-rendering:pixelated;" />` : ''}
-          <div>
-            <div class="craft-recipe-name">${item.name}</div>
-            <div class="craft-recipe-desc" style="color:#f5c518;">${item.price} pratas</div>
-          </div>
-        </div>
-      `;
+      const canBuy = data.silverBalance >= item.price;
+      const row = document.createElement('div');
+      row.className = 'craft-recipe-item';
+      row.innerHTML =
+        (item.icon ? '<img class="craft-item-icon" src="' + item.icon + '" />' : '<div class="craft-item-icon-placeholder"></div>') +
+        '<div class="craft-item-info">' +
+          '<div class="craft-recipe-name">' + item.name + '</div>' +
+          '<div class="craft-recipe-desc" style="color:#c8a820;">🪙 ' + item.price + ' pratas</div>' +
+        '</div>' +
+        '<div class="craft-item-action"></div>';
       const buyBtn = document.createElement('button');
-      buyBtn.textContent = data.silverBalance >= item.price ? 'Comprar' : 'Prata insuficiente';
-      buyBtn.className = data.silverBalance >= item.price ? 'dialog-btn-accept craft-btn' : 'dialog-btn-close craft-btn disabled';
-      buyBtn.disabled = data.silverBalance < item.price;
-      buyBtn.addEventListener('click', () => {
-        socket.emit('buyItem', { itemId: item.itemId });
-        closeDialog();
-      });
-      itemDiv.appendChild(buyBtn);
-      shopDiv.appendChild(itemDiv);
+      buyBtn.textContent = canBuy ? 'Comprar' : 'Sem prata';
+      buyBtn.className = canBuy ? 'craft-btn dialog-btn-accept' : 'craft-btn disabled';
+      buyBtn.disabled = !canBuy;
+      buyBtn.addEventListener('click', () => { socket.emit('buyItem', { itemId: item.itemId }); closeDialog(); });
+      row.querySelector('.craft-item-action').appendChild(buyBtn);
+      content.appendChild(row);
     }
-    btns.appendChild(shopDiv);
   }
 
-  // Crafting recipes (Artesão)
+  // Crafting (Artesão)
   if (data.isCrafter && data.recipes && data.recipes.length > 0) {
-    const recipesDiv = document.createElement('div');
-    recipesDiv.className = 'craft-recipes';
-    recipesDiv.innerHTML = '<h4 style="color:#d4a750;margin:8px 0 4px;">ðŸ› ï¸ Receitas:</h4>';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'craft-section-title';
+    titleEl.textContent = '🛠️ Receitas de Crafting';
+    content.appendChild(titleEl);
+
     for (const recipe of data.recipes) {
-      const recipeDiv = document.createElement('div');
-      recipeDiv.className = 'craft-recipe-item';
       const ingredientText = recipe.ingredients.map(ing => {
         const itemInfo = ITEMS_CLIENT[ing.itemId];
-        return `${ing.qty}x ${itemInfo ? itemInfo.name : ing.itemId}`;
-      }).join(', ');
+        return ing.qty + 'x ' + (itemInfo ? itemInfo.name : ing.itemId);
+      }).join(' + ');
       const resultItem = ITEMS_CLIENT[recipe.resultId];
       const iconSrc = resultItem && resultItem.icon ? resultItem.icon : '';
-      recipeDiv.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;">
-          ${iconSrc ? `<img src="${iconSrc}" style="width:32px;height:32px;image-rendering:pixelated;" />` : ''}
-          <div>
-            <div class="craft-recipe-name">${recipe.name}</div>
-            <div class="craft-recipe-desc">${ingredientText}</div>
-          </div>
-        </div>
-      `;
+      const row = document.createElement('div');
+      row.className = 'craft-recipe-item';
+      row.innerHTML =
+        (iconSrc ? '<img class="craft-item-icon" src="' + iconSrc + '" />' : '<div class="craft-item-icon-placeholder"></div>') +
+        '<div class="craft-item-info">' +
+          '<div class="craft-recipe-name">' + recipe.name + '</div>' +
+          '<div class="craft-recipe-desc">' + ingredientText + '</div>' +
+        '</div>' +
+        '<div class="craft-item-action"></div>';
       const craftBtn = document.createElement('button');
-      craftBtn.textContent = recipe.canCraft ? 'Criar' : 'Materiais insuficientes';
-      craftBtn.className = recipe.canCraft ? 'dialog-btn-accept craft-btn' : 'dialog-btn-close craft-btn disabled';
+      craftBtn.textContent = recipe.canCraft ? 'Criar' : 'Faltam mats';
+      craftBtn.className = recipe.canCraft ? 'craft-btn dialog-btn-accept' : 'craft-btn disabled';
       craftBtn.disabled = !recipe.canCraft;
       craftBtn.addEventListener('click', () => {
-        if (recipe.canCraft) {
-          socket.emit('craft', { recipeId: recipe.resultId });
-          closeDialog();
-        }
+        if (recipe.canCraft) { socket.emit('craft', { recipeId: recipe.resultId }); closeDialog(); }
       });
-      recipeDiv.appendChild(craftBtn);
-      recipesDiv.appendChild(recipeDiv);
+      row.querySelector('.craft-item-action').appendChild(craftBtn);
+      content.appendChild(row);
     }
-    btns.appendChild(recipesDiv);
   }
 
+  // Fechar sempre no rodapé
   const closeBtn = document.createElement('button');
   closeBtn.textContent = 'Fechar';
   closeBtn.className = 'dialog-btn-close';
   closeBtn.addEventListener('click', closeDialog);
-  btns.appendChild(closeBtn);
+  footer.appendChild(closeBtn);
 }
 
 function closeDialog() {
@@ -4493,12 +4785,18 @@ function showDropText(wx, wy, text, color, offsetY) {
 }
 
 // ============= DAMAGE NUMBERS =============
-function showDamage(wx, wy, dmg, color) {
+function showDamage(wx, wy, dmg, color, critical) {
   const container = document.getElementById('damage-numbers');
   const el = document.createElement('div');
-  el.className = 'dmg-number';
-  el.textContent = '-' + dmg;
-  el.style.color = color;
+  if (critical) {
+    el.className = 'dmg-number crit';
+    el.textContent = String(dmg) + '!';
+    el.style.color = '#ffd700';
+  } else {
+    el.className = 'dmg-number';
+    el.textContent = '-' + dmg;
+    el.style.color = color;
+  }
 
   const sx = wx * TILE_SIZE - cameraX;
   const sy = wy * TILE_SIZE - cameraY - 40;
@@ -4510,7 +4808,265 @@ function showDamage(wx, wy, dmg, color) {
   el.style.top = (sy * scaleY + rect.top) + 'px';
 
   container.appendChild(el);
-  setTimeout(() => el.remove(), 1000);
+  setTimeout(() => el.remove(), critical ? 1800 : 1000);
+}
+
+let levelUpAuraStart = 0;
+let levelUpAuraLevel = 1;
+
+function showLevelUp(level) {
+  levelUpAuraStart = Date.now();
+  levelUpAuraLevel = level;
+}
+
+function drawLevelUpAura(sx, sy) {
+  const elapsed = Date.now() - levelUpAuraStart;
+  const DURATION = 3500;
+  if (elapsed >= DURATION) return;
+
+  const progress = elapsed / DURATION;
+  const S = TILE_SIZE * 1.3;
+  const cx = sx;
+  const cy = sy - S * 0.38; // approx character center vertically
+
+  ctx.save();
+
+  // --- Expanding rings (3 staggered) ---
+  for (let i = 0; i < 3; i++) {
+    const phase = ((progress * 1.5 + i / 3) % 1);
+    const radius = S * 0.3 + phase * S * 1.8;
+    const alpha = (1 - phase) * (1 - progress * 0.5) * 0.9;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2.5 * (1 - phase) + 0.5;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = '#ffaa00';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // --- Inner pulsing glow ---
+  const pulse = (Math.sin(elapsed / 120) + 1) / 2;
+  const glowAlpha = (0.15 + pulse * 0.2) * (1 - progress * 0.8);
+  ctx.globalAlpha = glowAlpha;
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.6);
+  grad.addColorStop(0, '#ffffc0');
+  grad.addColorStop(0.5, '#ffd700');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = '#ffd700';
+  ctx.beginPath();
+  ctx.arc(cx, cy, S * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // --- Orbiting sparks (6 dots) ---
+  const sparkCount = 6;
+  for (let i = 0; i < sparkCount; i++) {
+    const angle = (elapsed / 400) + (i / sparkCount) * Math.PI * 2;
+    const orbitR = S * 0.45 + Math.sin(elapsed / 200 + i) * S * 0.1;
+    const px = cx + Math.cos(angle) * orbitR;
+    const py = cy + Math.sin(angle) * orbitR * 0.5; // elliptical
+    const sparkAlpha = (0.6 + Math.sin(elapsed / 150 + i * 1.3) * 0.4) * (1 - progress * 0.7);
+    ctx.globalAlpha = sparkAlpha;
+    ctx.fillStyle = i % 2 === 0 ? '#ffd700' : '#ffffff';
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- Floating "Nível X" text (first 1.5s only) ---
+  if (progress < 0.5) {
+    const textAlpha = Math.min(1, (1 - progress * 2) * 2);
+    const textY = cy - S * 0.6 - progress * S * 1.2;
+    ctx.globalAlpha = textAlpha;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = '#000';
+    ctx.textAlign = 'center';
+    ctx.fillText('Nível ' + levelUpAuraLevel + '!', cx, textY);
+  }
+
+  ctx.restore();
+}
+
+// ============= BOSS LOOT PANEL =============
+const RARITY_COLORS_LOOT = {
+  common: '#aaaaaa', uncommon: '#55cc55', rare: '#4a90d9',
+  epic: '#a54fcf', legendary: '#ff8c00'
+};
+const RARITY_LABELS_LOOT = {
+  common: 'Comum', uncommon: 'Incomum', rare: 'Raro', epic: 'Épico', legendary: 'Lendário'
+};
+
+function showBossLootPanel(data) {
+  closeBossLootPanel();
+  if ((!data.items || data.items.length === 0) && !data.silver) return;
+
+  // Backdrop
+  const backdrop = document.createElement('div');
+  backdrop.id = 'boss-loot-backdrop';
+  backdrop.className = 'boss-loot-backdrop';
+  backdrop.addEventListener('click', closeBossLootPanel);
+  document.body.appendChild(backdrop);
+
+  // Panel
+  const panel = document.createElement('div');
+  panel.id = 'boss-loot-panel';
+  panel.className = 'boss-loot-panel';
+
+  // Corner ornaments (estilo login)
+  ['tl','tr','bl','br'].forEach(pos => {
+    const c2 = document.createElement('div');
+    c2.className = 'boss-loot-corner ' + pos;
+    panel.appendChild(c2);
+  });
+
+  // --- Header ---
+  const header = document.createElement('div');
+  header.className = 'boss-loot-header';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'boss-loot-close-btn';
+  closeBtn.textContent = '✕';
+  closeBtn.addEventListener('click', closeBossLootPanel);
+  header.appendChild(closeBtn);
+
+  const skull = document.createElement('span');
+  skull.className = 'boss-loot-skull';
+  skull.textContent = '💀';
+  header.appendChild(skull);
+
+  const title = document.createElement('span');
+  title.className = 'boss-loot-title';
+  title.textContent = 'Boss Esqueleto';
+  header.appendChild(title);
+
+  const subtitle = document.createElement('span');
+  subtitle.className = 'boss-loot-subtitle';
+  subtitle.textContent = 'Recompensas de Batalha';
+  header.appendChild(subtitle);
+
+  // Divider (estilo login)
+  const divider = document.createElement('div');
+  divider.className = 'boss-loot-divider';
+  const gem = document.createElement('span');
+  gem.className = 'boss-loot-divider-gem';
+  gem.textContent = '⬧';
+  divider.appendChild(gem);
+  header.appendChild(divider);
+
+  panel.appendChild(header);
+
+  // --- Items ---
+  if (data.items && data.items.length > 0) {
+    const grid = document.createElement('div');
+    grid.className = 'boss-loot-grid';
+
+    data.items.forEach((item, idx) => {
+      const rc = RARITY_COLORS_LOOT[item.rarity] || '#aaaaaa';
+      const slot = document.createElement('div');
+      slot.className = 'boss-loot-item';
+
+      const bar = document.createElement('div');
+      bar.className = 'boss-loot-item-bar';
+      bar.style.background = rc;
+
+      const iconWrap = document.createElement('div');
+      iconWrap.className = 'boss-loot-item-icon-wrap';
+      if (item.icon) {
+        const img = document.createElement('img');
+        img.src = item.icon;
+        img.className = 'boss-loot-item-icon';
+        iconWrap.appendChild(img);
+      } else {
+        iconWrap.style.fontSize = '22px';
+        iconWrap.textContent = '⚔️';
+      }
+
+      const textBlock = document.createElement('div');
+      textBlock.className = 'boss-loot-item-text';
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'boss-loot-item-name';
+      nameEl.textContent = item.name || 'Item';
+      nameEl.style.color = rc;
+
+      const rarityEl = document.createElement('div');
+      rarityEl.className = 'boss-loot-item-rarity';
+      rarityEl.textContent = RARITY_LABELS_LOOT[item.rarity] || '';
+      rarityEl.style.color = rc;
+
+      textBlock.appendChild(nameEl);
+      textBlock.appendChild(rarityEl);
+      if (item.description) {
+        const desc = document.createElement('div');
+        desc.className = 'boss-loot-item-desc';
+        desc.textContent = item.description;
+        textBlock.appendChild(desc);
+      }
+
+      const action = document.createElement('div');
+      action.className = 'boss-loot-item-action';
+      action.textContent = '›';
+
+      slot.appendChild(bar);
+      slot.appendChild(iconWrap);
+      slot.appendChild(textBlock);
+      slot.appendChild(action);
+      slot.addEventListener('click', () => socket.emit('takeBossLootItem', { index: idx }));
+      grid.appendChild(slot);
+    });
+    panel.appendChild(grid);
+  }
+
+  // --- Silver ---
+  if (data.silver > 0) {
+    const silverRow = document.createElement('div');
+    silverRow.className = 'boss-loot-silver-row';
+
+    const bar = document.createElement('div');
+    bar.className = 'boss-loot-silver-bar';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'boss-loot-silver-icon-wrap';
+    iconWrap.textContent = '🪙';
+
+    const info = document.createElement('div');
+    info.className = 'boss-loot-silver-info';
+    const label = document.createElement('div');
+    label.className = 'boss-loot-silver-label';
+    label.textContent = 'Pratas';
+    const amt = document.createElement('div');
+    amt.className = 'boss-loot-silver-amt';
+    amt.textContent = data.silver + ' Pratas';
+    info.appendChild(label);
+    info.appendChild(amt);
+
+    const action = document.createElement('div');
+    action.className = 'boss-loot-silver-action';
+    action.textContent = '›';
+
+    silverRow.appendChild(bar);
+    silverRow.appendChild(iconWrap);
+    silverRow.appendChild(info);
+    silverRow.appendChild(action);
+    silverRow.addEventListener('click', () => socket.emit('takeBossLootSilver'));
+    panel.appendChild(silverRow);
+  }
+
+  document.body.appendChild(panel);
+}
+
+function closeBossLootPanel() {
+  const p = document.getElementById('boss-loot-panel');
+  if (p) p.remove();
+  const b = document.getElementById('boss-loot-backdrop');
+  if (b) b.remove();
 }
 
 // ============= HELPERS =============

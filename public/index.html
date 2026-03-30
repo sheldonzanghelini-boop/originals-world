@@ -4,28 +4,98 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Originals World</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <!-- LOGIN SCREEN -->
   <div id="login-screen">
-    <div id="login-box">
-      <h1>⚔️ Originals World ⚔️</h1>
-      <p class="subtitle">Um mundo de aventura te espera</p>
-      <div id="login-error" class="error-msg"></div>
-      <div class="form-group">
-        <label>Nome de Usuário</label>
-        <input type="text" id="username" maxlength="20" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label>Senha</label>
-        <input type="password" id="password" maxlength="30">
-      </div>
-      <div class="btn-row">
-        <button id="btn-login" class="btn-primary">Entrar</button>
-        <button id="btn-register" class="btn-secondary">Criar Conta</button>
-      </div>
+
+    <!-- Floating particles -->
+    <div class="particles-container" aria-hidden="true">
+      <span class="particle" style="left:4%;animation-duration:12s;animation-delay:0s;"></span>
+      <span class="particle" style="left:10%;animation-duration:8s;animation-delay:2s;width:5px;height:5px;"></span>
+      <span class="particle" style="left:16%;animation-duration:15s;animation-delay:1s;"></span>
+      <span class="particle" style="left:22%;animation-duration:10s;animation-delay:4s;width:2px;height:2px;"></span>
+      <span class="particle" style="left:30%;animation-duration:13s;animation-delay:0.5s;"></span>
+      <span class="particle" style="left:38%;animation-duration:9s;animation-delay:3s;width:5px;height:5px;"></span>
+      <span class="particle" style="left:45%;animation-duration:11s;animation-delay:1.5s;"></span>
+      <span class="particle" style="left:52%;animation-duration:14s;animation-delay:5s;width:4px;height:4px;"></span>
+      <span class="particle" style="left:60%;animation-duration:8s;animation-delay:2.5s;"></span>
+      <span class="particle" style="left:67%;animation-duration:12s;animation-delay:0.8s;width:2px;height:2px;"></span>
+      <span class="particle" style="left:74%;animation-duration:10s;animation-delay:3.5s;"></span>
+      <span class="particle" style="left:82%;animation-duration:7s;animation-delay:1.2s;width:5px;height:5px;"></span>
+      <span class="particle" style="left:88%;animation-duration:16s;animation-delay:4.5s;"></span>
+      <span class="particle" style="left:94%;animation-duration:9s;animation-delay:0.3s;width:3px;height:3px;"></span>
+      <span class="particle" style="left:8%;animation-duration:11s;animation-delay:6s;"></span>
+      <span class="particle" style="left:35%;animation-duration:13s;animation-delay:7s;width:4px;height:4px;"></span>
+      <span class="particle" style="left:55%;animation-duration:8s;animation-delay:8s;"></span>
+      <span class="particle" style="left:78%;animation-duration:14s;animation-delay:2.8s;width:2px;height:2px;"></span>
+      <span class="particle" style="left:25%;animation-duration:9s;animation-delay:9s;width:3px;height:3px;"></span>
+      <span class="particle" style="left:90%;animation-duration:11s;animation-delay:5.5s;"></span>
     </div>
+
+    <div class="login-wrapper">
+
+      <!-- Logo -->
+      <div class="game-logo">
+        <span class="logo-emblem">⚔️</span>
+        <h1 class="game-title">Originals World</h1>
+        <div class="logo-divider"><span class="divider-gem">◆</span></div>
+        <p class="game-tagline">Um mundo de aventura te espera</p>
+      </div>
+
+      <!-- Auth Box -->
+      <div class="auth-box">
+        <div class="corner corner-tl"></div>
+        <div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div>
+        <div class="corner corner-br"></div>
+
+        <!-- LOGIN PANEL -->
+        <div id="login-panel" class="auth-panel">
+          <h2 class="auth-title">Bem-vindo de Volta</h2>
+          <div id="login-error" class="error-msg"></div>
+          <div class="form-group">
+            <label>Usuário</label>
+            <input type="text" id="username" maxlength="20" autocomplete="off" placeholder="Digite seu usuário">
+          </div>
+          <div class="form-group">
+            <label>Senha</label>
+            <input type="password" id="password" maxlength="30" placeholder="Digite sua senha">
+          </div>
+          <button id="btn-login" class="btn-primary btn-full">⚔️ Entrar na Aventura</button>
+          <div class="auth-switch">
+            Novo aventureiro? <button class="link-btn" id="link-to-register">Criar Conta</button>
+          </div>
+        </div>
+
+        <!-- REGISTER PANEL -->
+        <div id="register-panel" class="auth-panel" style="display:none;">
+          <h2 class="auth-title">Criar Conta</h2>
+          <div id="register-error" class="error-msg"></div>
+          <div class="form-group">
+            <label>Nome de Usuário</label>
+            <input type="text" id="reg-username" maxlength="20" autocomplete="off" placeholder="Escolha seu usuário (min. 3)">
+          </div>
+          <div class="form-group">
+            <label>Senha</label>
+            <input type="password" id="reg-password" maxlength="30" placeholder="Mínimo 4 caracteres">
+          </div>
+          <div class="form-group">
+            <label>Confirmar Senha</label>
+            <input type="password" id="reg-password-confirm" maxlength="30" placeholder="Repita a senha">
+          </div>
+          <button id="btn-register" class="btn-primary btn-full">✨ Continuar para Criação de Personagem</button>
+          <div class="auth-switch">
+            Já tem conta? <button class="link-btn" id="link-to-login">Entrar</button>
+          </div>
+        </div>
+
+      </div><!-- /auth-box -->
+    </div><!-- /login-wrapper -->
   </div>
 
   <!-- CHARACTER CREATION SCREEN -->
@@ -99,108 +169,179 @@
         <canvas id="gameCanvas"></canvas>
         <div id="quest-tracker"></div>
         <div id="damage-numbers"></div>
+        <div id="attack-cd-wrap"><div id="attack-cd-bar"></div></div>
+        <div id="hotbar"></div>
       </div>
 
       <!-- RIGHT: Side Panel -->
       <div id="side-panel">
         <div id="panel-tabs">
-          <button class="tab-btn active" data-tab="status">Status</button>
-          <button class="tab-btn" data-tab="inventory">Inventário</button>
+          <button class="tab-btn active" data-tab="personagem">Personagem</button>
           <button class="tab-btn" data-tab="skills">Skills</button>
         </div>
 
-        <!-- STATUS TAB -->
-        <div id="tab-status" class="tab-content active">
-          <div class="panel-section">
-            <h3 id="char-name">Jogador</h3>
-            <div class="stat-row"><span>Nível:</span><span id="stat-level">1</span></div>
-            <div class="hp-bar-container">
-              <div id="hp-bar" class="hp-bar"></div>
-              <span id="hp-text">25/25</span>
+        <!-- PERSONAGEM TAB (status + inventory merged) -->
+        <div id="tab-personagem" class="tab-content active tab-personagem">
+          <!-- Hero Card: Portrait + Name/Level/Silver -->
+          <div class="hero-card">
+            <canvas id="portrait-canvas" width="72" height="72"></canvas>
+            <div class="hero-info">
+              <div id="char-name" class="hero-name">Jogador</div>
+              <div class="hero-level">Nv. <span id="stat-level">1</span></div>
+              <div class="silver-badge">
+                <span class="silver-coin">🪙</span>
+                <span id="stat-silver">0</span>
+              </div>
             </div>
-            <div class="xp-bar-container">
-              <div id="xp-bar" class="xp-bar"></div>
-              <span id="xp-text">0/100 XP</span>
+          </div>
+          <!-- Vital Bars -->
+          <div class="vital-bars">
+            <div class="vital-row">
+              <div class="vital-label"><span>❤️</span><span>HP</span></div>
+              <div class="hp-bar-container">
+                <div id="hp-bar" class="hp-bar"></div>
+                <span id="hp-text">25/25</span>
+              </div>
             </div>
-            <div class="stat-row"><span>💰 Pratas:</span><span id="stat-silver">0</span></div>
+            <div class="vital-row">
+              <div class="vital-label"><span>⭐</span><span>XP</span></div>
+              <div class="xp-bar-container">
+                <div id="xp-bar" class="xp-bar"></div>
+                <span id="xp-text">0/100</span>
+              </div>
+            </div>
           </div>
-          <div class="panel-section">
-            <h4>Atributos</h4>
-            <div class="stat-row"><span>❤️ Vida:</span><span id="stat-hp-max">25</span></div>
-            <div class="stat-row"><span>⚔️ Força:</span><span id="stat-str">0</span></div>
-            <div class="stat-row"><span>🧠 Inteligência:</span><span id="stat-int">0</span></div>
-            <div class="stat-row"><span>🛡️ Defesa:</span><span id="stat-def">0</span></div>
-            <div class="stat-row"><span>🍀 Sorte:</span><span id="stat-luck">0</span></div>
-          </div>
-          <div class="panel-section">
-            <h4>Equipamento</h4>
-            <div class="equip-grid">
-              <div class="equip-box" id="equip-helmet" data-slot="helmet">
+          <!-- Equipment body silhouette -->
+          <div class="equip-body-section">
+            <div class="equip-body-label">Equipamento</div>
+            <div class="equip-body-grid">
+              <!-- Row 1: only helmet (center) -->
+              <div class="equip-body-empty"></div>
+              <div class="equip-box equip-body-box" id="equip-helmet" data-slot="helmet">
                 <span class="equip-box-label">Elmo</span>
               </div>
-              <div class="equip-box" id="equip-chest" data-slot="chest">
-                <span class="equip-box-label">Peitoral</span>
-              </div>
-              <div class="equip-box" id="equip-legs" data-slot="legs">
-                <span class="equip-box-label">Calça</span>
-              </div>
-              <div class="equip-box" id="equip-boots" data-slot="boots">
-                <span class="equip-box-label">Botas</span>
-              </div>
-              <div class="equip-box" id="equip-weapon" data-slot="weapon">
+              <div class="equip-body-empty"></div>
+              <!-- Row 2: weapon | chest | weapon2 -->
+              <div class="equip-box equip-body-box" id="equip-weapon" data-slot="weapon">
                 <span class="equip-box-label">Mão 1</span>
               </div>
-              <div class="equip-box" id="equip-weapon2" data-slot="weapon2">
+              <div class="equip-box equip-body-box" id="equip-chest" data-slot="chest">
+                <span class="equip-box-label">Peitoral</span>
+              </div>
+              <div class="equip-box equip-body-box" id="equip-weapon2" data-slot="weapon2">
                 <span class="equip-box-label">Mão 2</span>
               </div>
-              <div class="equip-box" id="equip-ring1" data-slot="ring1">
+              <!-- Row 3: ring1 | legs | ring2 -->
+              <div class="equip-box equip-body-box" id="equip-ring1" data-slot="ring1">
                 <span class="equip-box-label">Anel 1</span>
               </div>
-              <div class="equip-box" id="equip-ring2" data-slot="ring2">
+              <div class="equip-box equip-body-box" id="equip-legs" data-slot="legs">
+                <span class="equip-box-label">Calça</span>
+              </div>
+              <div class="equip-box equip-body-box" id="equip-ring2" data-slot="ring2">
                 <span class="equip-box-label">Anel 2</span>
               </div>
+              <!-- Row 4: only boots (center) -->
+              <div class="equip-body-empty"></div>
+              <div class="equip-box equip-body-box" id="equip-boots" data-slot="boots">
+                <span class="equip-box-label">Botas</span>
+              </div>
+              <div class="equip-body-empty"></div>
             </div>
           </div>
-        </div>
-
-        <!-- INVENTORY TAB -->
-        <div id="tab-inventory" class="tab-content">
-          <div class="panel-section">
-            <h4>Inventário</h4>
-            <div id="inventory-grid"></div>
-          </div>
+          <!-- Inventory grid -->
+          <div class="equip-inv-divider"><span>Mochila</span></div>
+          <div id="inventory-grid"></div>
         </div>
 
         <!-- SKILLS TAB -->
         <div id="tab-skills" class="tab-content">
+          <div class="skill-points-header">
+            <div class="skill-pts-badge"><span id="skill-points">0</span></div>
+            <div class="skill-pts-title">Pontos Disponíveis<span>clique + para distribuir</span></div>
+          </div>
           <div class="panel-section">
-            <h4>Árvore de Skills</h4>
-            <div class="stat-row"><span>Pontos disponíveis:</span><span id="skill-points">0</span></div>
+            <h4>Distribuir Atributos</h4>
             <div id="skills-list">
               <div class="skill-row">
-                <span>❤️ Vida</span>
-                <span class="skill-val" id="skill-vitality">0</span>
-                <button class="btn-skill" data-skill="vitality">+</button>
+                <div class="skill-left">
+                  <span class="skill-icon">❤️</span>
+                  <span class="skill-name">Vida</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-vitality">0</span>
+                  <button class="btn-skill" data-skill="vitality">+</button>
+                </div>
               </div>
               <div class="skill-row">
-                <span>⚔️ Força</span>
-                <span class="skill-val" id="skill-strength">0</span>
-                <button class="btn-skill" data-skill="strength">+</button>
+                <div class="skill-left">
+                  <span class="skill-icon">⚔️</span>
+                  <span class="skill-name">Força</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-strength">0</span>
+                  <button class="btn-skill" data-skill="strength">+</button>
+                </div>
               </div>
               <div class="skill-row">
-                <span>🧠 Inteligência</span>
-                <span class="skill-val" id="skill-intelligence">0</span>
-                <button class="btn-skill" data-skill="intelligence">+</button>
+                <div class="skill-left">
+                  <span class="skill-icon">🧠</span>
+                  <span class="skill-name">Inteligência</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-intelligence">0</span>
+                  <button class="btn-skill" data-skill="intelligence">+</button>
+                </div>
               </div>
               <div class="skill-row">
-                <span>🛡️ Defesa</span>
-                <span class="skill-val" id="skill-defense">0</span>
-                <button class="btn-skill" data-skill="defense">+</button>
+                <div class="skill-left">
+                  <span class="skill-icon">🛡️</span>
+                  <span class="skill-name">Defesa</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-defense">0</span>
+                  <button class="btn-skill" data-skill="defense">+</button>
+                </div>
               </div>
               <div class="skill-row">
-                <span>🍀 Sorte</span>
-                <span class="skill-val" id="skill-luck">0</span>
-                <button class="btn-skill" data-skill="luck">+</button>
+                <div class="skill-left">
+                  <span class="skill-icon">🍀</span>
+                  <span class="skill-name">Sorte</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-luck">0</span>
+                  <button class="btn-skill" data-skill="luck">+</button>
+                </div>
+              </div>
+              <div class="skill-row">
+                <div class="skill-left">
+                  <span class="skill-icon">⚡</span>
+                  <span class="skill-name">Agilidade</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-agility">0</span>
+                  <button class="btn-skill" data-skill="agility">+</button>
+                </div>
+              </div>
+              <div class="skill-row">
+                <div class="skill-left">
+                  <span class="skill-icon">💨</span>
+                  <span class="skill-name">Velocidade</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-speed">0</span>
+                  <button class="btn-skill" data-skill="speed">+</button>
+                </div>
+              </div>
+              <div class="skill-row">
+                <div class="skill-left">
+                  <span class="skill-icon">🎯</span>
+                  <span class="skill-name">Crítico</span>
+                </div>
+                <div class="skill-right">
+                  <span class="skill-val" id="skill-critical">0</span>
+                  <button class="btn-skill" data-skill="critical">+</button>
+                </div>
               </div>
             </div>
           </div>
@@ -210,6 +351,10 @@
 
     <!-- BOTTOM: Chat -->
     <div id="chat-panel">
+      <div id="chat-topbar">
+        <span id="chat-topbar-label">💬 Chat</span>
+        <button id="btn-chat-toggle" title="Minimizar chat">▼</button>
+      </div>
       <div id="chat-messages"></div>
       <div id="chat-input-row">
         <input type="text" id="chat-input" placeholder="Pressione Enter para enviar..." maxlength="200" autocomplete="off">
@@ -221,9 +366,17 @@
   <!-- NPC DIALOG -->
   <div id="npc-dialog" style="display:none;">
     <div id="npc-dialog-box">
-      <h3 id="npc-dialog-name">NPC</h3>
+      <div class="corner corner-tl"></div>
+      <div class="corner corner-tr"></div>
+      <div class="corner corner-bl"></div>
+      <div class="corner corner-br"></div>
+      <div class="npc-dialog-head">
+        <h3 id="npc-dialog-name">NPC</h3>
+        <div class="npc-head-divider"><span class="divider-gem">◆</span></div>
+      </div>
       <p id="npc-dialog-text">Texto</p>
-      <div id="npc-dialog-buttons"></div>
+      <div id="npc-dialog-content"></div>
+      <div id="npc-dialog-footer"></div>
     </div>
   </div>
 
